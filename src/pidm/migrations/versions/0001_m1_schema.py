@@ -32,8 +32,9 @@ def upgrade() -> None:
     sa.Column('data', sa.JSON(), nullable=False),
     sa.PrimaryKeyConstraint('slug')
     )
-    # M1 fixtures: five SRD 5.1 monsters copied verbatim from 5e-database; M2 replaces this data.
-    monsters = json.loads(resources.files("pidm.data").joinpath("srd_monsters.json").read_text(encoding="utf-8"))
+    # M1 fixtures: five SRD 5.1 monsters from the vendored 5e-database file; M2 imports the rest.
+    monsters = [m for m in json.loads(resources.files("pidm.data").joinpath("5e-SRD-Monsters.json").read_text(encoding="utf-8"))
+                if m["index"] in ("bandit", "bandit-captain", "goblin", "skeleton", "wolf")]
     srd = sa.table("srd_monsters", sa.column("slug", sa.String), sa.column("name", sa.String), sa.column("data", sa.JSON))
     op.bulk_insert(srd, [{"slug": m["index"], "name": m["name"], "data": m} for m in monsters])
     op.create_table('characters',

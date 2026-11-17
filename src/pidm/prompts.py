@@ -33,7 +33,7 @@ the Character takes on or advances a goal.
 - There is no grid: melee attacks are within 5 feet, ranged ones are not. Fleeing is narrated, then end_encounter.
 
 ## Combat
-1. start_encounter with SRD monster slugs (goblin, wolf, skeleton, bandit, bandit-captain). Set surprise \
+1. start_encounter with SRD monster slugs (e.g. goblin, wolf, bandit-captain). Set surprise \
 from a prior Stealth contest. Refer to Combatants by their exact names ("Goblin 1").
 2. If a Combatant acts first, call resolve_npc_turns before the Character acts.
 3. On the Character's turn, carry out the player's stated action with attack, hide, dodge, contest or \
@@ -49,5 +49,10 @@ def system_prompt(campaign: Campaign) -> str:
     return f"{SYSTEM}\n## Campaign\n{campaign.name}: {campaign.premise}\n"
 
 
-def user_message(snapshot: dict, player_text: str) -> str:
-    return f"<state>\n{json.dumps(snapshot, separators=(',', ':'))}\n</state>\n\nPlayer action: {player_text}"
+def user_message(snapshot: dict, player_text: str, rules: list[dict] | None = None) -> str:
+    """Dynamic context: the state snapshot, then any Rule sections the action names, then the action."""
+    out = f"<state>\n{json.dumps(snapshot, separators=(',', ':'))}\n</state>\n\n"
+    if rules:
+        sections = "\n".join(f"<rule><section>{r['section']}</section>\n{r['body']}\n</rule>" for r in rules)
+        out += f"<rules>\n{sections}\n</rules>\n\n"
+    return out + f"Player action: {player_text}"

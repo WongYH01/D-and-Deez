@@ -221,3 +221,40 @@ def test_m1_exit_scene(factory, world):
     # Each roll event carries its outcome as it happens (initiative and damage rolls have none).
     outcomes = [p["outcome"] for e, p in ev if e == "roll" and p["outcome"]]
     assert outcomes == ["success", "win", "loss", "miss", "miss", "miss", "hit", "hit", "miss", "success"]
+
+
+def final_user_message(claude, request=0):
+    return claude.requests[request]["messages"][-1]["content"]
+
+
+def test_an_action_naming_a_rule_carries_its_rule_sections(factory, world):
+    sid = world()
+    claude = FakeClaude(text("You duck behind the wall."))
+    TurnOrchestrator(factory, claude).run_turn(sid, "I take cover behind the wall", Events())
+    msg = final_user_message(claude)
+    state, rules = msg.index("<state>"), msg.index("<rules>")
+    assert state < rules < msg.index("Player action: I take cover behind the wall")
+    assert msg.count("<section>") == 2 and "<section>Cover</section>" in msg
+    # The long Pits section is cut to about 600 tokens, with a pointer to the full text.
+    assert "lookup_rule returns the full text" in msg
+
+
+def test_an_action_naming_no_rule_carries_no_rule_text(factory, world):
+    sid = world()
+    claude = FakeClaude(text("The innkeeper nods."))
+    TurnOrchestrator(factory, claude).run_turn(sid, "I order an ale", Events())
+    assert "<rules>" not in final_user_message(claude)
+
+
+def test_m2_exit_scene(factory, world):
+    """M2 exit: "I grapple the goblin" puts the Grappling Rule section in context and leads to a contest."""
+    sid = world("fighter")  # Bram: Athletics +5
+    claude = FakeClaude([tool("start_encounter", monsters=[{"monster": "goblin"}])],
+                        [tool("contest", a="character", b="Goblin 1", effect="grapple")],
+                        text("You wrestle the goblin to a standstill."))
+    rng = scripted_rng([20, 1,   # Bram 22 acts before the goblin
+                        15, 2])  # Athletics 20 vs goblin Acrobatics 2+2 = 4
+    TurnOrchestrator(factory, claude, rng=rng).run_turn(sid, "I grapple the goblin", Events())
+    assert "<section>Making an Attack > Melee Attacks > Grappling</section>" in final_user_message(claude)
+    result = claude.requests[2]["messages"][-1]["content"][0]
+    assert "Goblin 1 is grappled" in result["content"]
