@@ -6,6 +6,8 @@ Rules a reviewer applies to every diff. Each is a judgement call; cite the rule 
 
 Every engine rule carries a comment naming what it implements: a section of `docs/rules/srd-5.1-mechanics.md` (`§4.26`) or a ruling (`R7`). The Rulings section at the end of that file overrides the quoted SRD text. A rule with no citation, or a citation that doesn't match the quoted text, is a finding. New engine behaviour that no section or ruling covers gets a new `Rn` entry in the Rulings section marked "Proposed (issue #N); awaiting owner confirmation", and the PR body lists it.
 
+Story-director behaviour (bible checks, story tools, the Director block, Endings) cites the design document's Story design section instead (`Story design §6`). Behaviour that differs from the originating issue or that section is a finding unless the same change updates the design document and the PR body lists the difference.
+
 ## Domain names follow the glossary
 
 Names in code, tool schemas, prompts and error messages use the terms in `GLOSSARY.md` (Turn, Tool round, Character, Combatant, Combat round, Combatant's turn, Roll). The one exception is the tool name `resolve_npc_turns`, fixed by the design document.
@@ -22,6 +24,6 @@ Set a Roll's `target` and `outcome` before calling `dice.record`: recording emit
 
 Tools change ORM objects loaded for the Turn; only the orchestrator commits (ADR 0002). Replace JSON columns (`conditions`, `flags`, `feature_uses`, `Encounter.state`) with a new value instead of mutating them in place, so SQLAlchemy sees the change.
 
-## Engine tests use the two seams
+## Engine tests use the three seams
 
-Tests call tools through `dispatch` with scripted dice (Seam 1) or run the orchestrator with a fake Claude client (Seam 2). Expected numbers come from the SRD text or worked dice, never recomputed the way the code does. A test of a rule names the section or ruling it covers.
+Tests call tools through `dispatch` with scripted dice (Seam 1), run the orchestrator with a fake Claude client (Seam 2), or start a Campaign through `start_campaign` with a fake Claude client that returns bible tool calls (Seam 3). Expected numbers come from the SRD text or worked dice, never recomputed the way the code does. A test of a rule names the section or ruling it covers.

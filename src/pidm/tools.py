@@ -21,6 +21,7 @@ from pidm.engine import (
     set_flag,
 )
 from pidm.models import Combatant, Encounter, InventoryItem, Quest, SrdItem, SrdMonster, SrdSpell
+from pidm.story import ENDINGS, t_advance_beat, t_end_campaign, t_move_to, t_reveal_clue, t_tick_clock
 
 CHARACTER = "character"
 
@@ -1181,6 +1182,16 @@ TOOLS: dict[str, tuple[Callable[..., dict], str, dict]] = {
                  _schema({"amount": _I, "reason": _S}, ["amount", "reason"])),
     "update_quest": (t_update_quest, "Create a quest (no quest_id; title required) or update one by id: status (active, completed, failed) and/or a note.",
                      _schema({"quest_id": _I, "title": _S, "status": {"type": "string", "enum": ["active", "completed", "failed"]}, "note": _S}, [])),
+    "move_to": (t_move_to, "The Character arrives at a bible Location (slug, e.g. 'loc.mill'). Places you invent are not Locations and need no call.",
+                _schema({"location": _S}, ["location"])),
+    "advance_beat": (t_advance_beat, "Resolve a Beat of the current Act (slug, e.g. 'act1.beat2') when its goal is met, with a one-line outcome. Beats resolve in any order once their requires are met. Reports when the next Act opens or the Victory condition is met.",
+                     _schema({"beat": _S, "outcome": _S}, ["beat", "outcome"])),
+    "reveal_clue": (t_reveal_clue, "The Character finds a Clue of the current Act (slug, e.g. 'clue.ledger.1'), wherever it was placed. Returns its text and whether its Secret is now learned.",
+                    _schema({"clue": _S}, ["clue"])),
+    "tick_clock": (t_tick_clock, "Fill a Clock (slug, e.g. 'clock.ritual') by 1 to 3 segments when time passes, a check fails with consequences, or a threat is ignored. Returns the consequence when the Clock fills.",
+                   _schema({"clock": _S, "segments": _I, "reason": _S}, ["clock", "segments", "reason"])),
+    "end_campaign": (t_end_campaign, "End the Campaign with an Ending whose condition holds (the Director block says when): victory, defeat or fallen_hero. Then narrate the epilogue.",
+                     _schema({"ending": {"type": "string", "enum": list(ENDINGS)}}, ["ending"])),
     "lookup_rule": (t_lookup_rule, "Search the SRD rules prose. Returns the top three matching Rule sections in full, each with its heading path. Changes nothing.",
                     _schema({"query": {**_S, "description": "e.g. 'grapple' or 'falling damage'"}}, ["query"])),
     "lookup_srd": (t_lookup_srd, "Look up an SRD monster, spell or item record by slug (e.g. 'bandit-captain', 'cure-wounds', 'longsword'). Changes nothing.",

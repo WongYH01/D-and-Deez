@@ -1,0 +1,55 @@
+{
+  "title": "The Drowned Bell",
+  "premise": "Fishermen in the marsh village of Marrowford have been vanishing on foggy nights, and some swear they hear a bell tolling under the water. You arrive as the fog rolls in again.",
+  "central_question": "Can the Character stop Abbess Varn from ringing the Drowned Bell before the marsh swallows Marrowford?",
+  "antagonist": {
+    "name": "Abbess Varn",
+    "goal": "Wake the thing that sleeps beneath the marsh and be made its living saint.",
+    "plan": "Drown villagers beneath the sunken chapel to strengthen the bell, then ring it at the next spring tide.",
+    "unopposed": "The bell rings, the marsh rises over Marrowford, and the drowned walk as Varn's congregation."
+  },
+  "acts": [
+    {
+      "slug": "act1",
+      "goal": "Find who is taking the villagers and stop the Drowned Bell from ringing.",
+      "beats": [
+        {"slug": "act1.ferryman", "goal": "Find out what happened to Osric the ferryman, the latest to vanish.", "requires": []},
+        {"slug": "act1.undercroft", "goal": "Get into the flooded undercroft beneath the sunken chapel.", "requires": ["secret.sluice"]},
+        {"slug": "act1.bell", "goal": "Silence the Drowned Bell and face Abbess Varn.", "requires": ["act1.undercroft", "secret.rope"]}
+      ]
+    }
+  ],
+  "secrets": [
+    {"slug": "secret.sluice", "act": "act1", "revelation": "The old mill's sluice tunnel runs under the marsh straight into the chapel's undercroft."},
+    {"slug": "secret.rope", "act": "act1", "revelation": "The bell is rung by a rope braided from the hair of the drowned; cut it with silver and the bell can never ring."}
+  ],
+  "clues": [
+    {"slug": "clue.sluice.1", "secret": "secret.sluice", "description": "Wet footprints lead from the mill's waterwheel into a grated tunnel that smells of the chapel's incense.", "location": "loc.mill"},
+    {"slug": "clue.sluice.2", "secret": "secret.sluice", "description": "Old Hesta at the tavern remembers smugglers using 'the miller's drain' to reach the chapel before it sank.", "location": "loc.village"},
+    {"slug": "clue.sluice.3", "secret": "secret.sluice", "description": "A cultist's map, dropped on the shore, marks the mill with a bell symbol and an arrow pointing down.", "location": "loc.shore"},
+    {"slug": "clue.rope.1", "secret": "secret.rope", "description": "Osric's widow says the cultists cut a lock of hair from every person they took.", "location": "loc.village"},
+    {"slug": "clue.rope.2", "secret": "secret.rope", "description": "A hymn carved into the mill's beams: 'Braided from the drowned, cut only by the moon's own metal.'", "location": "loc.mill"},
+    {"slug": "clue.rope.3", "secret": "secret.rope", "description": "Inside the sunken chapel's bell tower, a silver knife lies rusted shut in a reliquary marked 'Never again'.", "location": "loc.chapel"}
+  ],
+  "clocks": [
+    {"slug": "clock.tide", "name": "The spring tide rises", "segments": 6, "consequence": "The Drowned Bell rings: the marsh rises over Marrowford and the drowned walk.", "main": true},
+    {"slug": "clock.suspicion", "name": "The cult grows suspicious", "segments": 4, "consequence": "Three cultists ambush the Character in the fog.", "main": false}
+  ],
+  "npcs": [
+    {"name": "Abbess Varn", "motive": "Believes the thing beneath the marsh will make her a saint."},
+    {"name": "Old Hesta", "motive": "Runs the tavern and wants her grandson, a reluctant cultist, brought home alive."},
+    {"name": "Mira, Osric's widow", "motive": "Wants her husband found, or avenged."}
+  ],
+  "locations": [
+    {"slug": "loc.shore", "name": "The Reed Shore", "purpose": "Where Osric's ferry drifts in empty; the opening scene."},
+    {"slug": "loc.village", "name": "Marrowford village and the Lantern tavern", "purpose": "Rumours, the widow and Old Hesta."},
+    {"slug": "loc.mill", "name": "The abandoned tide mill", "purpose": "The cult's hidden way into the chapel."},
+    {"slug": "loc.chapel", "name": "The sunken chapel", "purpose": "The undercroft, the bell tower and the final confrontation."}
+  ],
+  "start_location": "loc.shore",
+  "endings": {
+    "victory": "The bell's rope is cut and Varn is stopped before the spring tide: Marrowford survives, though not everyone taken comes home.",
+    "defeat": "The spring tide comes and the bell rings: the marsh swallows Marrowford and Varn's drowned congregation rises."
+  },
+  "opening_scene": "Fog on the Reed Shore. Osric's ferry bumps against the reeds, empty, its lantern still lit, and somewhere under the black water a bell tolls once. A hooded figure on the bank sees the Character and runs."
+}

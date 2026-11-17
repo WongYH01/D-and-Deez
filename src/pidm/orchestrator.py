@@ -1,7 +1,7 @@
 """Turn orchestrator: runs one Turn from player action to committed Narration.
 
 It knows nothing about the terminal or HTTP; it reports through `emit(event, payload)` with the
-events roll, narration_delta, turn_done and error. M4 wires the same object to SSE.
+events roll, narration_delta, turn_done (with the Campaign's ending, if any) and error. M4 wires the same object to SSE.
 """
 
 from __future__ import annotations
@@ -16,15 +16,20 @@ from sqlalchemy.orm import sessionmaker
 from pidm.claude import ClaudeClient, Reply, Usage
 from pidm.dice import Dice
 from pidm.engine import load_state
-from pidm.models import RollRecord, Turn
-from pidm.prompts import system_prompt, user_message
+from pidm.models import RollRecord, Session, Turn
+from pidm.prompts import OPENING, system_prompt, user_message
 from pidm.rules import retrieve
+from pidm.story import director_block, end, ending_met
 from pidm.tools import dispatch, snapshot, tool_definitions
 
 Emit = Callable[[str, dict], None]
 
 
 class TurnAlreadyRunning(Exception):
+    pass
+
+
+class CampaignEnded(Exception):
     pass
 
 
@@ -53,11 +58,19 @@ class TurnOrchestrator:
         self._lock = threading.Lock()
         self.running = False
 
+    def run_opening(self, session_id: int, emit: Emit) -> Turn:
+        """Turn 0: Claude narrates the bible's opening scene."""
+        return self.run_turn(session_id, OPENING, emit)
+
     def run_turn(self, session_id: int, player_text: str, emit: Emit) -> Turn:
         if not self._lock.acquire(blocking=False):
             raise TurnAlreadyRunning("A Turn is already running.")
         self.running = True
         try:
+            with self.factory() as db:
+                camp = db.get(Session, session_id).campaign
+                if camp.status != "active":
+                    raise CampaignEnded(f"The Campaign has ended ({camp.ending}).")
             return self._run(session_id, player_text, emit)
         finally:
             self.running = False
@@ -80,10 +93,11 @@ class TurnOrchestrator:
         usage = Usage()
         try:
             state = load_state(db, session_id, dice)
+            state.turn = seq
             system = system_prompt(state.campaign)
             tools = tool_definitions()
-            messages = self._history(db, session_id) + [
-                {"role": "user", "content": user_message(snapshot(state), player_text, retrieve(db, player_text))}]
+            context = user_message(snapshot(state), player_text, retrieve(db, player_text), director_block(state))
+            messages = self._history(db, session_id) + [{"role": "user", "content": context}]
             narration = None
             for _ in range(self.round_cap):
                 reply = self.client.send(system=system, messages=messages, tools=tools, tools_enabled=True, on_text=None)
@@ -107,6 +121,8 @@ class TurnOrchestrator:
                                          on_text=lambda t: emit("narration_delta", {"turn_seq": seq, "text": t}))
                 usage.add(reply.usage)
                 narration = text_of(reply)
+            if ending_met(state) == "defeat":
+                end(state.campaign, "defeat")  # Claude skipped end_campaign on a full Main clock
             turn = Turn(session_id=session_id, seq=seq, player_text=player_text, narration=narration,
                         status="committed", tokens_in=usage.input_tokens, tokens_out=usage.output_tokens,
                         tokens_cached=usage.cached_tokens)
@@ -114,7 +130,7 @@ class TurnOrchestrator:
                                      target=r.target, outcome=r.outcome) for i, r in enumerate(dice.rolls)]
             db.add(turn)
             db.commit()  # state tree, turn row and rolls in one transaction (ADR 0002)
-            emit("turn_done", {"turn_id": turn.id, "turn_seq": seq})
+            emit("turn_done", {"turn_id": turn.id, "turn_seq": seq, "ending": state.campaign.ending})
             return turn
         except Exception as e:
             db.rollback()
