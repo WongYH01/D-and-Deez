@@ -2,62 +2,17 @@
 
 from __future__ import annotations
 
-import copy
-import itertools
-
 import pytest
 from sqlalchemy import select
 
-from pidm.claude import ClaudeError, Reply, Usage
+from pidm.claude import ClaudeError, Usage
 from pidm.engine import load_state
 from pidm.models import Campaign, RollRecord, Session, Turn
-from pidm.orchestrator import TurnAlreadyRunning, TurnOrchestrator
+from pidm.campaign import Setup, start_campaign
+from pidm.orchestrator import CampaignEnded, TurnAlreadyRunning, TurnOrchestrator
 from pidm.templates import create_character
 
-_ids = itertools.count(1)
-
-
-def tool(name, **args):
-    return {"type": "tool_use", "id": f"toolu_{next(_ids)}", "name": name, "input": args}
-
-
-def text(t):
-    return {"type": "text", "text": t}
-
-
-class FakeClaude:
-    """Returns scripted replies in order; an Exception in the script is raised instead."""
-
-    def __init__(self, *script):
-        self.script = list(script)
-        self.requests = []
-
-    def send(self, *, system, messages, tools, tools_enabled, on_text):
-        self.requests.append({"system": system, "messages": copy.deepcopy(messages), "tools_enabled": tools_enabled})
-        item = self.script.pop(0)
-        if isinstance(item, Exception):
-            raise item
-        blocks = item if isinstance(item, list) else [item]
-        if on_text:
-            for b in blocks:
-                if b["type"] == "text":
-                    on_text(b["text"])
-        stop = "tool_use" if any(b["type"] == "tool_use" for b in blocks) else "end_turn"
-        return Reply(content=blocks, stop_reason=stop, usage=Usage(100, 20, 60))
-
-
-class Events(list):
-    def __call__(self, event, payload):
-        self.append((event, payload))
-
-    def kinds(self):
-        return [e for e, _ in self]
-
-
-def scripted_rng(values):
-    it = iter(values)
-    return lambda sides: next(it)
-
+from conftest import Events, FakeClaude, fixture_bible, scripted_rng, text, tool
 
 @pytest.fixture
 def world(factory):
@@ -258,3 +213,142 @@ def test_m2_exit_scene(factory, world):
     assert "<section>Making an Attack > Melee Attacks > Grappling</section>" in final_user_message(claude)
     result = claude.requests[2]["messages"][-1]["content"][0]
     assert "Goblin 1 is grappled" in result["content"]
+
+
+# --- M3: story director --------------------------------------------------------------------
+
+@pytest.fixture
+def story_world(factory):
+    def make(template="fighter"):
+        setup = Setup("dark fantasy", "grim", "one-shot", lines="harm to children", veils="torture")
+        return start_campaign(factory, setup, template, None, bible=fixture_bible()).id
+    return make
+
+
+def campaign(factory, session_id):
+    return load_state(factory(), session_id, None).campaign
+
+
+def test_the_director_block_and_the_bible_reach_claude_every_turn(factory, story_world):
+    sid = story_world()
+    claude = FakeClaude(text("Fog."), text("More fog."))
+    orch = TurnOrchestrator(factory, claude)
+    orch.run_turn(sid, "I look around", Events())
+    orch.run_turn(sid, "I wait", Events())
+    system = claude.requests[0]["system"]
+    assert claude.requests[1]["system"] == system  # byte-identical across Turns (cache breakpoint 1)
+    assert "The Drowned Bell" in system and "secret.rope" in system and "Abbess Varn" in system
+    assert "Lines (never show): harm to children" in system and "Veils (keep off-screen): torture" in system
+    msg = final_user_message(claude)
+    director = msg[msg.index("<director>"):msg.index("</director>")]
+    assert msg.index("</state>") < msg.index("<director>") < msg.index("Player action: I look around")
+    assert "Act 1 of 1: Find who is taking the villagers" in director
+    assert "Location: loc.shore (The Reed Shore)" in director
+    assert "- act1.undercroft: Get into the flooded undercroft beneath the sunken chapel. (requires secret.sluice)" in director
+    assert "- clue.sluice.3: A cultist's map" in director and "clue.sluice.1" not in director  # local Clues only
+    assert "Learned Secrets: none" in director
+    assert "The spring tide rises 0/6 (clock.tide, main)" in director and "The cult grows suspicious 0/4" in director
+    assert "Turns since progress: 0" in director and "STALL" not in director
+
+
+def test_the_opening_scene_is_turn_0(factory, story_world):
+    sid = story_world()
+    claude = FakeClaude(text("Fog on the Reed Shore... What do you do?"))
+    turn = TurnOrchestrator(factory, claude).run_opening(sid, Events())
+    assert turn.seq == 0 and turn.status == "committed"
+    assert "opening scene" in final_user_message(claude)
+
+
+def test_a_stall_nudge_names_a_clue_on_the_8th_turn_and_repeats(factory, story_world):
+    sid = story_world()
+    claude = FakeClaude(*[text(f"Nothing happens {i}.") for i in range(10)])
+    orch = TurnOrchestrator(factory, claude)
+    for i in range(10):
+        orch.run_turn(sid, f"I wait {i}", Events())
+    stalls = ["STALL" in final_user_message(claude, i) for i in range(10)]
+    assert stalls == [False] * 8 + [True, True]  # Turn seq 8 is 8 Turns after the last progress at Turn 0
+    msg = final_user_message(claude, 8)
+    assert "Turns since progress: 8" in msg
+    assert "Bring Clue clue.sluice.1 (Wet footprints lead from the mill's waterwheel" in msg  # from another Location
+
+
+def test_play_stops_at_defeat_even_when_claude_skips_end_campaign(factory, story_world):
+    sid = story_world()
+    claude = FakeClaude(tool("tick_clock", clock="clock.tide", segments=3, reason="delay"), text("The tide creeps."),
+                        tool("tick_clock", clock="clock.tide", segments=3, reason="delay"), text("The bell tolls."))
+    orch = TurnOrchestrator(factory, claude)
+    orch.run_turn(sid, "I nap", Events())
+    ev = Events()
+    orch.run_turn(sid, "I nap again", ev)
+    assert ev[-1] == ("turn_done", {"turn_id": 2, "turn_seq": 1, "ending": "defeat"})
+    camp = campaign(factory, sid)
+    assert (camp.status, camp.ending) == ("complete", "defeat")
+    with pytest.raises(CampaignEnded):
+        orch.run_turn(sid, "I keep going", Events())
+    assert len(claude.requests) == 4 and len(turns(factory, sid)) == 2
+
+
+def test_a_failed_turn_leaves_the_story_unchanged(factory, story_world):
+    sid = story_world()
+    claude = FakeClaude([tool("reveal_clue", clue="clue.sluice.3"), tool("move_to", location="loc.mill")],
+                        ClaudeError("overloaded"))
+    turn = TurnOrchestrator(factory, claude).run_turn(sid, "I search the shore", Events())
+    assert turn.status == "failed"
+    camp = campaign(factory, sid)
+    assert camp.current_location == "loc.shore" and camp.secrets[0].learned_turn is None
+    assert all(c.revealed_turn is None for s in camp.secrets for c in s.clues)
+
+
+def test_m3_exit_one_shot_from_opening_hook_to_victory(factory, story_world):
+    """M3 exit: the one-shot fixture played from its opening scene to a Victory, with scripted Claude."""
+    sid = story_world("rogue")
+    claude = FakeClaude(
+        text("Fog on the Reed Shore. A hooded figure runs. What do you do?"),
+        tool("reveal_clue", clue="clue.sluice.3"), text("The map marks the mill."),
+        [tool("move_to", location="loc.village"), tool("reveal_clue", clue="clue.rope.1")], text("Mira's story chills you."),
+        tool("advance_beat", beat="act1.ferryman", outcome="Osric is held in the undercroft."), text("Hesta knows."),
+        [tool("move_to", location="loc.mill"), tool("advance_beat", beat="act1.undercroft", outcome="Through the sluice.")],
+        text("You wade into the dark."),
+        [tool("move_to", location="loc.chapel"), tool("advance_beat", beat="act1.bell", outcome="The rope is cut with silver.")],
+        tool("end_campaign", ending="victory"),
+        text("The bell falls silent. Marrowford wakes to a clear dawn."),
+    )
+    orch = TurnOrchestrator(factory, claude)
+    ev = Events()
+    orch.run_opening(sid, ev)
+    for action in ("I chase the figure", "I ask in the village", "I ask Hesta about Osric", "I enter the sluice",
+                   "I climb the bell tower and cut the rope"):
+        orch.run_turn(sid, action, ev)
+    assert "error" not in ev.kinds() and ev[-1][1]["ending"] == "victory"
+    # advance_beat told Claude the Victory condition was met before it called end_campaign.
+    assert "victory_condition_met" in str(claude.requests[-2]["messages"][-1]["content"])
+    camp = campaign(factory, sid)
+    assert (camp.status, camp.ending, camp.current_location) == ("complete", "victory", "loc.chapel")
+    assert [b.resolved_turn for b in camp.beats] == [3, 4, 5]
+    assert [s.learned_turn for s in camp.secrets] == [1, 2]
+    with pytest.raises(CampaignEnded):
+        orch.run_turn(sid, "I ring the bell anyway", Events())
+
+
+def test_m3_exit_an_idle_player_is_brought_a_clue_within_8_turns(factory, story_world):
+    """M3 exit: a player who does nothing still gets a Clue by Turn 8, because the Stall nudge names one."""
+    sid = story_world()
+
+    class Director(FakeClaude):
+        """Plays the idle Turns, and on a Stall reveals the Clue the nudge names."""
+
+        def send(self, **kw):
+            msg = kw["messages"][-1]["content"]
+            if isinstance(msg, str) and "STALL" in msg:
+                slug = msg.split("Bring Clue ")[1].split(" ")[0]
+                self.script = [tool("reveal_clue", clue=slug), text("A messenger staggers in with a map.")]
+            elif not self.script:
+                self.script = [text("The fog hangs still.")]
+            return super().send(**kw)
+
+    orch = TurnOrchestrator(factory, Director())
+    orch.run_opening(sid, Events())
+    for _ in range(8):
+        orch.run_turn(sid, "I wait", Events())
+    revealed = [c for s in campaign(factory, sid).secrets for c in s.clues if c.revealed_turn is not None]
+    assert [(c.slug, c.revealed_turn) for c in revealed] == [("clue.sluice.1", 8)]

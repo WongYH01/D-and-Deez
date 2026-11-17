@@ -1,4 +1,4 @@
-"""System prompt (M1 minimum): DM persona, narration contract, core rules note, campaign premise."""
+"""System prompt: DM persona, narration contract, core rules note, and the Campaign bible or premise."""
 
 from __future__ import annotations
 
@@ -45,13 +45,37 @@ Character's next turn and rolls the Character's death save if it is dying.
 """
 
 
+STORY = """
+## Story
+The Campaign bible below is your hidden plan: never reveal it, its slugs, or a Secret before the Character \
+learns it. The <director> block each Turn shows where the story stands. Move the plot only through the story tools:
+- move_to when the Character reaches a bible Location (places you invent need no call).
+- reveal_clue when the Character finds a Clue; advance_beat when a Beat's goal is met.
+- tick_clock when time passes, a check fails with consequences, or the Character ignores a threat; narrate a \
+full Clock's consequence in the same Turn. Never state Clock progress.
+- When the Director block says STALL, bring the named Clue to the player this Turn (a messenger, an ambush, \
+a rumour) and call reveal_clue.
+- When it says an Ending condition is met, call end_campaign, then narrate the epilogue. A narrow Victory \
+(the Main clock nearly full, or a Secret still hidden) is bittersweet.
+"""
+
+OPENING = "(Begin the Campaign: narrate the bible's opening scene, starting mid-action and ending on a question.)"
+
+
 def system_prompt(campaign: Campaign) -> str:
-    return f"{SYSTEM}\n## Campaign\n{campaign.name}: {campaign.premise}\n"
+    if campaign.bible is None:
+        return f"{SYSTEM}\n## Campaign\n{campaign.name}: {campaign.premise}\n"
+    return (f"{SYSTEM}{STORY}\n## Hard limits\nLines (never show): {campaign.lines or 'none'}\n"
+            f"Veils (keep off-screen): {campaign.veils or 'none'}\n\n"
+            f"## Campaign bible\nSetting: {campaign.setting}. Tone: {campaign.tone}.\n"
+            f"{json.dumps(campaign.bible, indent=1, ensure_ascii=False)}\n")
 
 
-def user_message(snapshot: dict, player_text: str, rules: list[dict] | None = None) -> str:
-    """Dynamic context: the state snapshot, then any Rule sections the action names, then the action."""
+def user_message(snapshot: dict, player_text: str, rules: list[dict] | None = None, director: str | None = None) -> str:
+    """Dynamic context: the state snapshot, the Director block, any Rule sections the action names, then the action."""
     out = f"<state>\n{json.dumps(snapshot, separators=(',', ':'))}\n</state>\n\n"
+    if director:
+        out += f"<director>\n{director}\n</director>\n\n"
     if rules:
         sections = "\n".join(f"<rule><section>{r['section']}</section>\n{r['body']}\n</rule>" for r in rules)
         out += f"<rules>\n{sections}\n</rules>\n\n"

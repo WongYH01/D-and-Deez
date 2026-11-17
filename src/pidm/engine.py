@@ -28,6 +28,7 @@ class GameState:
     session: Session
     dice: Dice
     _monsters: dict = field(default_factory=dict)
+    turn: int = 0  # seq of the Turn being played; story tools stamp it on Beats, Clues and Secrets
 
     @property
     def campaign(self) -> Campaign:

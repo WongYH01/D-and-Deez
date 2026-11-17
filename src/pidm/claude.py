@@ -38,10 +38,15 @@ class ClaudeError(Exception):
 
 class ClaudeClient(Protocol):
     def send(self, *, system: str, messages: list[dict], tools: list[dict], tools_enabled: bool,
-             on_text: Callable[[str], None] | None) -> Reply: ...
+             on_text: Callable[[str], None] | None, force_tool: str | None = None) -> Reply: ...
 
 
 DEFAULT_MODEL = "claude-sonnet-5-5"
+
+
+def plan_client() -> "AnthropicClient":
+    """The client that writes Campaign bibles; PIDM_PLAN_MODEL lets Opus be compared without a code change."""
+    return AnthropicClient(model=os.environ.get("PIDM_PLAN_MODEL", DEFAULT_MODEL))
 
 
 class AnthropicClient:
@@ -53,7 +58,7 @@ class AnthropicClient:
         # The SDK retries 429, 5xx and connection errors with exponential backoff.
         self.client = anthropic.Anthropic(max_retries=max_retries)
 
-    def send(self, *, system, messages, tools, tools_enabled, on_text=None) -> Reply:
+    def send(self, *, system, messages, tools, tools_enabled, on_text=None, force_tool=None) -> Reply:
         import anthropic
 
         try:
@@ -64,7 +69,8 @@ class AnthropicClient:
                 messages=messages,
                 tools=tools,
                 # Tools stay in the request (stable prefix) but can't be called on the narration-only call.
-                tool_choice={"type": "auto" if tools_enabled else "none"},
+                tool_choice={"type": "tool", "name": force_tool} if force_tool
+                else {"type": "auto" if tools_enabled else "none"},
                 # Server-side fallback when a request is declined (refusal stop reason).
                 betas=["server-side-fallback-2026-07-01"],
                 fallbacks="default",

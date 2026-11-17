@@ -27,11 +27,25 @@ class Campaign(Base):
     name: Mapped[str] = mapped_column(String(200))
     premise: Mapped[str] = mapped_column(Text, default="")
     ruleset: Mapped[str] = mapped_column(String(20), default="srd-5.1")
-    status: Mapped[str] = mapped_column(String(20), default="active")
+    status: Mapped[str] = mapped_column(String(20), default="active")  # active, complete
+    # Setup choices and the hidden Campaign bible; bible is None for a Campaign started without one.
+    setting: Mapped[str] = mapped_column(Text, default="")
+    tone: Mapped[str] = mapped_column(String(40), default="")
+    length: Mapped[str] = mapped_column(String(20), default="one-shot")  # one-shot, short
+    lines: Mapped[str] = mapped_column(Text, default="")
+    veils: Mapped[str] = mapped_column(Text, default="")
+    bible: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    current_act: Mapped[int] = mapped_column(Integer, default=1)  # 1-based
+    current_location: Mapped[str] = mapped_column(String(60), default="")  # a bible Location slug
+    last_progress_turn: Mapped[int] = mapped_column(Integer, default=0)  # Turn seq of the last Beat or Clue
+    ending: Mapped[str | None] = mapped_column(String(20), nullable=True)  # victory, defeat, fallen_hero, retired
 
     character: Mapped["Character"] = relationship(back_populates="campaign", uselist=False, cascade="all, delete-orphan")
     quests: Mapped[list["Quest"]] = relationship(back_populates="campaign", cascade="all, delete-orphan", order_by="Quest.id")
     sessions: Mapped[list["Session"]] = relationship(back_populates="campaign", cascade="all, delete-orphan", order_by="Session.id")
+    beats: Mapped[list["Beat"]] = relationship(back_populates="campaign", cascade="all, delete-orphan", order_by="Beat.id")
+    secrets: Mapped[list["Secret"]] = relationship(back_populates="campaign", cascade="all, delete-orphan", order_by="Secret.id")
+    clocks: Mapped[list["Clock"]] = relationship(back_populates="campaign", cascade="all, delete-orphan", order_by="Clock.id")
 
 
 class Character(Base):
@@ -105,6 +119,56 @@ class Quest(Base):
     status: Mapped[str] = mapped_column(String(20), default="active")
     notes: Mapped[list] = mapped_column(JSON, default=list)
     campaign: Mapped[Campaign] = relationship(back_populates="quests")
+
+
+class Beat(Base):
+    __tablename__ = "beats"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    campaign_id: Mapped[int] = mapped_column(ForeignKey("campaigns.id"))
+    slug: Mapped[str] = mapped_column(String(60))
+    act: Mapped[int] = mapped_column(Integer)
+    goal: Mapped[str] = mapped_column(Text)
+    requires: Mapped[list] = mapped_column(JSON, default=list)  # Beat or Secret slugs
+    status: Mapped[str] = mapped_column(String(20), default="open")  # open, resolved
+    resolved_turn: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    campaign: Mapped[Campaign] = relationship(back_populates="beats")
+
+
+class Secret(Base):
+    __tablename__ = "secrets"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    campaign_id: Mapped[int] = mapped_column(ForeignKey("campaigns.id"))
+    slug: Mapped[str] = mapped_column(String(60))
+    act: Mapped[int] = mapped_column(Integer)
+    revelation: Mapped[str] = mapped_column(Text)
+    learned_turn: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    campaign: Mapped[Campaign] = relationship(back_populates="secrets")
+    clues: Mapped[list["Clue"]] = relationship(back_populates="secret", cascade="all, delete-orphan", order_by="Clue.id")
+
+
+class Clue(Base):
+    __tablename__ = "clues"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    secret_id: Mapped[int] = mapped_column(ForeignKey("secrets.id"))
+    slug: Mapped[str] = mapped_column(String(60))
+    description: Mapped[str] = mapped_column(Text)
+    location: Mapped[str] = mapped_column(String(60))  # a bible Location slug
+    revealed_turn: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    secret: Mapped[Secret] = relationship(back_populates="clues")
+
+
+class Clock(Base):
+    __tablename__ = "clocks"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    campaign_id: Mapped[int] = mapped_column(ForeignKey("campaigns.id"))
+    slug: Mapped[str] = mapped_column(String(60))
+    name: Mapped[str] = mapped_column(String(200))
+    segments: Mapped[int] = mapped_column(Integer)
+    filled: Mapped[int] = mapped_column(Integer, default=0)
+    consequence: Mapped[str] = mapped_column(Text)
+    is_main: Mapped[bool] = mapped_column(Boolean, default=False)
+    visible: Mapped[bool] = mapped_column(Boolean, default=False)
+    campaign: Mapped[Campaign] = relationship(back_populates="clocks")
 
 
 class Session(Base):
