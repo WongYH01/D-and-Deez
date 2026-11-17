@@ -37,16 +37,22 @@ class ClaudeError(Exception):
 
 
 class ClaudeClient(Protocol):
-    def send(self, *, system: str, messages: list[dict], tools: list[dict], tools_enabled: bool,
+    def send(self, *, system: str | list[dict], messages: list[dict], tools: list[dict], tools_enabled: bool,
              on_text: Callable[[str], None] | None, force_tool: str | None = None) -> Reply: ...
 
 
 DEFAULT_MODEL = "claude-sonnet-5-5"
+DEFAULT_RECAP_MODEL = "claude-haiku-5-5"
 
 
 def plan_client() -> "AnthropicClient":
     """The client that writes Campaign bibles; PIDM_PLAN_MODEL lets Opus be compared without a code change."""
     return AnthropicClient(model=os.environ.get("PIDM_PLAN_MODEL", DEFAULT_MODEL))
+
+
+def recap_client() -> "AnthropicClient":
+    """The client that writes Recaps; PIDM_RECAP_MODEL trades cost for quality without a code change."""
+    return AnthropicClient(model=os.environ.get("PIDM_RECAP_MODEL", DEFAULT_RECAP_MODEL), max_tokens=2000)
 
 
 class AnthropicClient:
@@ -61,16 +67,16 @@ class AnthropicClient:
     def send(self, *, system, messages, tools, tools_enabled, on_text=None, force_tool=None) -> Reply:
         import anthropic
 
+        # Tools stay in the request (stable prefix) but can't be called on the narration-only call.
+        tool_args = {"tools": tools, "tool_choice": {"type": "tool", "name": force_tool} if force_tool
+                     else {"type": "auto" if tools_enabled else "none"}} if tools else {}
         try:
             with self.client.beta.messages.stream(
                 model=self.model,
                 max_tokens=self.max_tokens,
                 system=system,
                 messages=messages,
-                tools=tools,
-                # Tools stay in the request (stable prefix) but can't be called on the narration-only call.
-                tool_choice={"type": "tool", "name": force_tool} if force_tool
-                else {"type": "auto" if tools_enabled else "none"},
+                **tool_args,
                 # Server-side fallback when a request is declined (refusal stop reason).
                 betas=["server-side-fallback-2026-07-01"],
                 fallbacks="default",

@@ -1,7 +1,7 @@
 """Turn orchestrator: runs one Turn from player action to committed Narration.
 
 It knows nothing about the terminal or HTTP; it reports through `emit(event, payload)` with the
-events roll, narration_delta, turn_done (with the Campaign's ending, if any) and error. M4 wires the same object to SSE.
+events roll, narration_delta, state_changed, turn_done, campaign_ended and error. The server passes its broadcaster.
 """
 
 from __future__ import annotations
@@ -17,12 +17,14 @@ from pidm.claude import ClaudeClient, Reply, Usage
 from pidm.dice import Dice
 from pidm.engine import load_state
 from pidm.models import RollRecord, Session, Turn
-from pidm.prompts import OPENING, system_prompt, user_message
+from pidm.prompts import OPENING, RESUME, system_prompt, user_message
+from pidm.recap import recap_block
 from pidm.rules import retrieve
 from pidm.story import director_block, end, ending_met
 from pidm.tools import dispatch, snapshot, tool_definitions
 
 Emit = Callable[[str, dict], None]
+CACHE = {"type": "ephemeral"}  # the default 5-minute lifetime
 
 
 class TurnAlreadyRunning(Exception):
@@ -47,13 +49,38 @@ def text_of(reply: Reply) -> str:
     return "".join(b["text"] for b in reply.content if b["type"] == "text")
 
 
+def next_seq(db, campaign_id: int) -> int:
+    """Turns are numbered across the Campaign: 0 is its opening, and failed Turns use up a number too."""
+    last = db.scalar(select(func.max(Turn.seq)).join(Session).where(Session.campaign_id == campaign_id))
+    return 0 if last is None else last + 1
+
+
+def _tokens(chars: int) -> int:
+    # shortcut: characters / 4 estimates tokens; switch to the token-counting API if logged counts are far off.
+    return chars // 4
+
+
+def trim_history(history: list[dict], context: str, budget: int) -> list[dict]:
+    """Drop the oldest action and Narration pairs until the history plus the dynamic context fits the budget.
+
+    The context (state snapshot, Director block, recap block, Rule sections) is never cut; `retrieve` already
+    caps Rule sections at two, so the oldest pairs are the only thing left to drop in v1.
+    """
+    size = len(context) + sum(len(m["content"]) for m in history)
+    while history and _tokens(size) > budget:
+        size -= len(history[0]["content"]) + len(history[1]["content"])
+        history = history[2:]
+    return history
+
+
 class TurnOrchestrator:
     def __init__(self, factory: sessionmaker, client: ClaudeClient, *, round_cap: int = 4,
-                 history_turns: int = 8, rng: Callable[[int], int] | None = None):
+                 history_turns: int = 8, context_budget: int = 8000, rng: Callable[[int], int] | None = None):
         self.factory = factory
         self.client = client
         self.round_cap = round_cap
         self.history_turns = history_turns
+        self.context_budget = context_budget
         self.rng = rng
         self._lock = threading.Lock()
         self.running = False
@@ -61,6 +88,10 @@ class TurnOrchestrator:
     def run_opening(self, session_id: int, emit: Emit) -> Turn:
         """Turn 0: Claude narrates the bible's opening scene."""
         return self.run_turn(session_id, OPENING, emit)
+
+    def run_resume(self, session_id: int, emit: Emit) -> Turn:
+        """The first Turn of a later Session: a short "previously" from the recap block."""
+        return self.run_turn(session_id, RESUME, emit)
 
     def run_turn(self, session_id: int, player_text: str, emit: Emit) -> Turn:
         if not self._lock.acquire(blocking=False):
@@ -76,9 +107,10 @@ class TurnOrchestrator:
             self.running = False
             self._lock.release()
 
-    def _history(self, db, session_id: int) -> list[dict]:
+    def _history(self, db, campaign_id: int) -> list[dict]:
+        """The Campaign's last committed Turns, across Session boundaries."""
         turns = db.scalars(
-            select(Turn).where(Turn.session_id == session_id, Turn.status == "committed")
+            select(Turn).join(Session).where(Session.campaign_id == campaign_id, Turn.status == "committed")
             .order_by(Turn.seq.desc()).limit(self.history_turns)).all()
         messages = []
         for t in reversed(turns):
@@ -87,17 +119,22 @@ class TurnOrchestrator:
 
     def _run(self, session_id: int, player_text: str, emit: Emit) -> Turn:
         db = self.factory()
-        last = db.scalar(select(func.max(Turn.seq)).where(Turn.session_id == session_id))
-        seq = 0 if last is None else last + 1
+        campaign_id = db.get(Session, session_id).campaign_id
+        seq = next_seq(db, campaign_id)
         dice = Dice(rng=self.rng, on_roll=lambda r: emit("roll", {"turn_seq": seq, **r.as_dict()}))
         usage = Usage()
         try:
             state = load_state(db, session_id, dice)
             state.turn = seq
-            system = system_prompt(state.campaign)
+            # Breakpoint 1 covers the tools and system prompt; breakpoint 2 the final user message, so later
+            # Tool rounds of this Turn reread the dynamic context from the cache.
+            system = [{"type": "text", "text": system_prompt(state.campaign), "cache_control": CACHE}]
             tools = tool_definitions()
-            context = user_message(snapshot(state), player_text, retrieve(db, player_text), director_block(state))
-            messages = self._history(db, session_id) + [{"role": "user", "content": context}]
+            context = user_message(snapshot(state), player_text, retrieve(db, player_text), director_block(state),
+                                   recap_block(db, state.session))
+            history = trim_history(self._history(db, campaign_id), context, self.context_budget)
+            messages = history + [{"role": "user", "content": [{"type": "text", "text": context,
+                                                                "cache_control": CACHE}]}]
             narration = None
             for _ in range(self.round_cap):
                 reply = self.client.send(system=system, messages=messages, tools=tools, tools_enabled=True, on_text=None)
@@ -130,7 +167,10 @@ class TurnOrchestrator:
                                      target=r.target, outcome=r.outcome) for i, r in enumerate(dice.rolls)]
             db.add(turn)
             db.commit()  # state tree, turn row and rolls in one transaction (ADR 0002)
-            emit("turn_done", {"turn_id": turn.id, "turn_seq": seq, "ending": state.campaign.ending})
+            emit("state_changed", {"turn_seq": seq})
+            emit("turn_done", {"turn_seq": seq})
+            if state.campaign.ending:
+                emit("campaign_ended", {"campaign_id": campaign_id, "ending": state.campaign.ending})
             return turn
         except Exception as e:
             db.rollback()

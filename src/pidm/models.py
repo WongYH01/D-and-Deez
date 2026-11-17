@@ -27,13 +27,18 @@ class Campaign(Base):
     name: Mapped[str] = mapped_column(String(200))
     premise: Mapped[str] = mapped_column(Text, default="")
     ruleset: Mapped[str] = mapped_column(String(20), default="srd-5.1")
-    status: Mapped[str] = mapped_column(String(20), default="active")  # active, complete
+    # generating, then ready, then active, then complete; or failed (with setup_error)
+    status: Mapped[str] = mapped_column(String(20), default="active")
     # Setup choices and the hidden Campaign bible; bible is None for a Campaign started without one.
     setting: Mapped[str] = mapped_column(Text, default="")
     tone: Mapped[str] = mapped_column(String(40), default="")
     length: Mapped[str] = mapped_column(String(20), default="one-shot")  # one-shot, short
     lines: Mapped[str] = mapped_column(Text, default="")
     veils: Mapped[str] = mapped_column(Text, default="")
+    template: Mapped[str] = mapped_column(String(20), default="")
+    character_name: Mapped[str] = mapped_column(String(100), default="")
+    hook: Mapped[str] = mapped_column(Text, default="")
+    setup_error: Mapped[str] = mapped_column(Text, default="")
     bible: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     current_act: Mapped[int] = mapped_column(Integer, default=1)  # 1-based
     current_location: Mapped[str] = mapped_column(String(60), default="")  # a bible Location slug
@@ -178,6 +183,7 @@ class Session(Base):
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     rolling_recap: Mapped[str] = mapped_column(Text, default="")
+    rolling_through: Mapped[int] = mapped_column(Integer, default=0)  # committed Turns the Rolling recap covers
     final_recap: Mapped[str] = mapped_column(Text, default="")
     campaign: Mapped[Campaign] = relationship(back_populates="sessions")
     encounters: Mapped[list["Encounter"]] = relationship(back_populates="session", cascade="all, delete-orphan", order_by="Encounter.id")

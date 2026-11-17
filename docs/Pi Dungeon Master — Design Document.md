@@ -57,16 +57,16 @@ The browser talks only to the FastAPI server. Claude never touches the database:
 
 A turn is one player action, resolved by code and narrated by Claude. Nothing is written to the database until the turn ends: game-state changes, the turn record and its rolls are held in memory and written in one short transaction, so a failed turn leaves no partial state.
 
-1. **Submit.** The player types an action and presses Send; the browser calls `POST /action`. If a turn is already running (`running_turn_id` in `GET /state`), the server answers 409.
-2. **Open the turn.** The orchestrator sets `running_turn_id` in memory, and the engine loads the campaign's game state into a tree of in-memory Python objects for this turn.
+1. **Submit.** The player types an action and presses Send; the browser calls `POST /action`. If a turn is already running (`running_turn_seq` in `GET /state`), the server answers 409.
+2. **Open the turn.** The orchestrator sets `running_turn_seq` in memory (the turn's number; it has no row id until it commits), and the engine loads the campaign's game state into a tree of in-memory Python objects for this turn.
 3. **Assemble context.** The context builder reads the state snapshot, the story director block, the session recap, rule sections matching keywords in the action, and (from v2) world facts and similar past scenes, then trims them to the token budget. No LLM call is needed.
 4. **Call Claude.** The orchestrator sends the request with streaming on.
 5. **Tool rounds.** When Claude requests tools, the engine validates each call against the in-memory state tree, computes the result, and changes only the tree. Each roll is held with the turn and sent at once as a `roll` event. The narration contract tells Claude to write no prose in a round that calls tools; any text it writes anyway is never shown and is stripped from the assistant message before the next round, so Claude never assumes the player has read it. In combat, Claude ends the player's action with resolve\_npc\_turns, which plays every monster turn in code, so a whole combat round fits in one tool call.
 6. **Final round.** Only the round that ends without tool calls streams to the browser as `narration_delta` events. If the round cap (default 4) is reached, the orchestrator makes one last call with tools disabled, so Claude narrates from the results it has instead of the turn being thrown away.
 7. **Commit.** In one short transaction the engine writes the changed parts of the state tree to the game tables, and the orchestrator saves the `turns` row (status `committed`, the narration and the token counts) with its rolls. The server then emits `state_changed` and `turn_done`, and the browser refreshes the sheet.
 8. **Fail safely.** If the API still fails after retries with backoff, the state tree and the turn's rolls are discarded, a `turns` row with status `failed` and its token counts is saved, and an `error` event is sent. The UI removes that turn's partial lines and offers Retry, which starts a new turn with fresh rolls.
-9. **Reconnect.** A browser that reconnects or reloads opens a new event stream and re-fetches `GET /log` and `GET /state`. Events are not replayed: while `running_turn_id` is set the input stays locked, and the turn appears from `GET /log` once `turn_done` arrives.
-10. **Background upkeep.** Every 10 turns the background worker updates the rolling recap, and at session end it writes the final recap; from v2 it also summarises scenes, extracts world facts and stores scene embeddings. Jobs run one at a time in the same process, so two jobs never overwrite each other. Recap writes go through the same data layer in their own short transactions; from v2, fact changes wait until no turn is running, so state never shifts mid-turn.
+9. **Reconnect.** A browser that reconnects or reloads opens a new event stream and re-fetches `GET /log` and `GET /state`. Events are not replayed: while `running_turn_seq` is set the input stays locked, and the turn appears from `GET /log` once `turn_done` arrives.
+10. **Background upkeep.** After every 10th committed turn of a session the background worker rewrites the rolling recap, and at session end it writes the final recap and a backup; from v2 it also summarises scenes, extracts world facts and stores scene embeddings. Jobs (campaign bible generation and recaps) run one at a time on their own thread, separate from the turn thread, so a slow job never delays a turn and two jobs never overwrite each other. Both threads make Claude calls outside any transaction and keep writes short, with SQLite's `busy_timeout` covering the rare overlap (ADR 0001). A failed recap job keeps the old text and is only logged. Recap writes go through the same data layer in their own short transactions; from v2, fact changes wait until no turn is running, so state never shifts mid-turn.
 
 A crash or restart mid-turn loses only that turn, because nothing of it was written; the player retypes the action.
 
@@ -76,7 +76,7 @@ All data lives in one SQLite file in WAL mode on a mounted volume, so the sheet 
 
 | Table | Key columns | Written by | Phase |
 | --- | --- | --- | --- |
-| `campaigns` | id, name, setting, tone, length, ruleset, lines, veils, bible (JSON), current\_act, current\_location, last\_progress\_turn, status, ending | Setup, engine | v1 |
+| `campaigns` | id, name, setting, tone, length, ruleset, lines, veils, template, character\_name, hook, bible (JSON), current\_act, current\_location, last\_progress\_turn, status (generating, ready, active, complete, failed), setup\_error, ending | Setup, engine | v1 |
 | `characters` | id, campaign\_id, name, template, level, xp, hp\_current, hp\_max, ac, ability scores, gold, conditions, death\_saves, hit\_dice, feature\_uses | Engine | v1 |
 | `skills` | character\_id, skill, proficient | Engine | v1 |
 | `inventory` | character\_id, item\_ref, qty, equipped | Engine | v1 |
@@ -105,6 +105,10 @@ From v2, adventure import adds `sources`, `source_chunks` (FTS5) and `campaigns.
 
 **Facts carry a validity window.** A fact is never deleted when it stops being true; its `valid_to_turn` is set instead ("Mira works for the Guild" until turn 212). Retrieval only reads facts where `valid_to_turn` is empty. Turn numbers, not wall-clock time, mark validity because they follow the story's order.
 
+**Turns are numbered across the campaign.** `turns.seq` counts from 0 (the campaign's opening) through every session, so story stamps (`resolved_turn`, `revealed_turn`, `learned_turn`, `last_progress_turn`) and stall detection compare turns from different sessions correctly.
+
+**One open session.** At most one session, across all campaigns, has no `ended_at`; every action goes to it. An active encounter belongs to the campaign, not the session, so a fight carries over when a session closes or the process restarts.
+
 **Rolls are saved with their turn.** Every roll of a committed turn is kept in `rolls`, so narration can be checked against what the dice said. A failed turn's rolls are discarded with it.
 
 ## LLM integration
@@ -117,10 +121,10 @@ Claude narrates scenes and decides what to attempt; every mechanical and plot re
 
 1. Tool definitions. *Fixed.*
 2. System prompt: DM persona and style, the narration contract (below), the condensed core-rules sheet, the campaign bible, and the lines and veils. *Fixed for the whole campaign; cache breakpoint 1.*
-3. Recent turns as clean pairs of player action and final narration, with no context blocks or tool calls: a sliding window of the last 8 turns. *Not cached across turns in v1.*
-4. The final user message: the dynamic context block (state snapshot, director block, session recap, retrieved rule sections, and from v2 world facts, past scenes and DM notes) followed by the player's action. *Cache breakpoint 2.*
+3. Recent turns as clean pairs of player action and final narration, with no context blocks or tool calls: a sliding window of the campaign's last 8 committed turns, so the window spans a session boundary. *Not cached across turns in v1.*
+4. The final user message: the dynamic context block (state snapshot, director block, recap block with the previous session's final recap and this session's rolling recap, retrieved rule sections, and from v2 world facts, past scenes and DM notes) followed by the player's action. *Cache breakpoint 2.*
 
-Breakpoint 2 means rounds 2 to 4 of the same turn reread everything up to the action from the cache. Everything before breakpoint 1 stays byte-identical across turns. The default cache lifetime is 5 minutes, refreshed on each hit, which normal play keeps warm. Caching the history across turns (a third breakpoint, with a window that drops five turns at a time) is a later optimisation, worth adding only if the logged token counts show the history is a real share of cost.
+Breakpoint 1 is a `cache_control` marker on the last system block (tools and system prompt); breakpoint 2 is one on the final user message. Breakpoint 2 means rounds 2 to 4 of the same turn reread everything up to the action from the cache. Everything before breakpoint 1 stays byte-identical across turns. The default cache lifetime is 5 minutes, refreshed on each hit, which normal play keeps warm. Caching the history across turns (a third breakpoint, with a window that drops five turns at a time) is a later optimisation, worth adding only if the logged token counts show the history is a real share of cost.
 
 **Narration contract (in the system prompt)**
 
@@ -215,7 +219,7 @@ Beats, clocks, secrets and clues go into their own tables, and the full bible go
 
 ### 3. Starting
 
-The first session opens with the bible's opening scene, narrated as turn 0, ending on a question to the player. Later sessions open with the recap and a reminder of where the player left off.
+The first session opens with the bible's opening scene, narrated as turn 0, ending on a question to the player. Later sessions open with a resume turn: Claude tells a short "previously" from the recap block, says where the Character stands, and ends on a question.
 
 ### 4. Progressing
 
@@ -244,7 +248,7 @@ Deferred to v2. In v1 the bible stays fixed for the whole campaign: three clues 
 
 When the main clock fills or the final beat resolves, the director block tells Claude the condition is met and to call `end_campaign`. If Claude does not call it in the turn the main clock fills, the orchestrator records Defeat anyway, so play cannot continue past a full main clock. Retiring needs no Claude call: the player confirms and the engine records it, with no epilogue. Victory and Defeat never hold together: once the main clock is full `advance_beat` is refused, and once the final beat is resolved the main clock can no longer be ticked.
 
-For the other endings Claude's final narration is the epilogue (a narrow victory, with the clock nearly full or a secret still hidden, can be told as bittersweet), and the campaign is marked complete. Carrying the character into a new campaign comes with the setup wizard, not M3.
+For the other endings Claude's final narration is the epilogue (a narrow victory, with the clock nearly full or a secret still hidden, can be told as bittersweet), and the campaign is marked complete. Every ending, retiring included, sends `campaign_ended` and closes the open session as `POST /session/end` does: final recap, then backup. Carrying the character into a new campaign comes with the setup wizard, not M3.
 
 ## Adventure import (v2)
 
@@ -282,7 +286,7 @@ Each kind of memory is stored in the shape that fits it and fetched by code befo
 | Game state | Sheet, conditions, inventory, quests, current encounter | Game tables | Full snapshot every turn | v1 |
 | Story state | Current act and location, open beats, local clues, learned secrets, clocks, turns since progress | Story tables | Director block every turn | v1 |
 | Campaign plan | The campaign bible | `campaigns`, story tables | Cached system prompt | v1 |
-| Recent turns | Last 8 action and narration pairs, verbatim | `turns` | Messages before the final user message | v1 |
+| Recent turns | The campaign's last 8 action and narration pairs, verbatim | `turns` | Messages before the final user message | v1 |
 | Session recap | Rolling summary of this session plus the last session's final recap | `sessions` | Always in the dynamic context | v1 |
 | World graph | NPCs, places, factions, items and their relations over time | `entities`, `facts` | Current facts within 2 hops of entities named in the action or the last narration | v2 |
 | Scene recall | One summary per finished scene | `scenes`, `scene_vec` | Top 3 scenes most similar to the action | v2 |
@@ -292,9 +296,11 @@ Each kind of memory is stored in the shape that fits it and fetched by code befo
 
 **Finding entities without an LLM call.** Entities tied to the current location and scene are always included, so "him" or "the tavern" still resolves. The context builder also matches the action and the last two narrations against entity names and aliases as whole words, ignoring case and skipping aliases shorter than four letters or on a stop-word list, then pulls their current facts (`valid_to_turn` empty) within 2 hops.
 
-**Writing memory.** Every 10 turns and at session end, the background worker (Haiku) folds the turns since its last update into the rolling recap. From v2 it also summarises each finished scene, proposes new or retired facts, which go through the engine's fact functions so validation stays in one place, and stores the scene embedding. Embeddings come from Voyage AI, Anthropic's recommended provider (Anthropic has no embedding model of its own), or a small local model; which one is an open question.
+**Writing memory.** After every 10th committed turn of a session and at session end, the background worker (Haiku, set by `PIDM_RECAP_MODEL`) folds the turns since its last update into the rolling recap. From v2 it also summarises each finished scene, proposes new or retired facts, which go through the engine's fact functions so validation stays in one place, and stores the scene embedding. Embeddings come from Voyage AI, Anthropic's recommended provider (Anthropic has no embedding model of its own), or a small local model; which one is an open question.
 
-**Budget (v1).** The dynamic context block and the recent-turn history share one token budget, 8,000 tokens by default and set in config. When it is exceeded, content is dropped in this order: rule sections beyond the top two, then (v2) scene recall and facts more than one hop away, then the oldest recent turns. The state snapshot, director block and recap are never dropped.
+**Budget (v1).** The dynamic context block and the recent-turn history share one token budget, 8,000 tokens by default and set in config. When it is exceeded, content is dropped in this order: rule sections beyond the top two, then (v2) scene recall and facts more than one hop away, then the oldest recent turns. The state snapshot, director block and recap are never dropped. Tokens are estimated as characters divided by four, with no counting call, so the budget adds no latency.
+
+**Missing final recap.** If a final recap call fails, the session still closes with `final_recap` empty, and the next `POST /session/start` writes it first. If it fails again, the new session opens anyway with the old rolling recap in its place, so a recap never blocks play.
 
 **Recap length.** The rolling recap is capped at 400 words and the previous session's final recap at 250. The worker rewrites the recap from the old recap plus the turns since its last update instead of appending to it, so it never grows past the cap however long a session runs.
 
@@ -324,7 +330,7 @@ Two screens: a setup wizard for new campaigns, and the play screen with the char
 
 **Play screen interactions**
 
-- Enter or Send submits the action and shows a thinking indicator until the first roll line or narration arrives. The input locks until `turn_done` or `error` arrives, and stays locked after a reload while `running_turn_id` is set.
+- Enter or Send submits the action and shows a thinking indicator until the first roll line or narration arrives. The input locks until `turn_done` or `error` arrives, and stays locked after a reload while `running_turn_seq` is set.
 - Each `roll` event renders as its own log line: the purpose, the expression, the total, the target and the outcome.
 - Narration appears word by word as `narration_delta` events arrive.
 - On `state_changed`, the sidebar re-fetches `GET /state`; HP and XP bars animate to the new values.
@@ -345,26 +351,28 @@ The browser sends commands over plain HTTP and receives everything a turn produc
 | --- | --- | --- |
 | `GET /` | The setup wizard or the play screen | HTML |
 | `GET /health` | Liveness check for the container | 200 |
-| `POST /campaigns` | Create a campaign from the setup form; generates the bible and validates it | 202 with `campaign_id`; status is `generating` until the bible is ready |
+| `POST /campaigns` | Create a campaign from the setup form; a job generates the bible and validates it | 202 with `campaign_id`; status is `generating`, then `ready` (premise shown) or `failed` (with `setup_error`) |
+| `POST /campaigns/{id}/regenerate` | Replace a `ready` campaign's bible with a new one | 202; status returns to `generating` |
+| `POST /campaigns/{id}/retire` | The player ends the campaign: Retired, no Claude call | 200; 409 while a turn is running |
 | `GET /campaigns` | List campaigns and their status | JSON |
-| `GET /state` | Sheet, conditions, inventory, quests, encounter, visible clocks, `running_turn_id` | JSON |
+| `GET /state` | Sheet, conditions, inventory, quests, encounter, visible clocks, `running_turn_seq` | JSON; 404 if no session is open |
 | `GET /log?session=<id>` | Committed turns and rolls for a session | JSON |
-| `POST /action` | Submit `{text}` for the open session | 202 with `turn_id`; 409 if a turn is running or no session is open |
+| `POST /action` | Submit `{text}` for the open session | 202 with `turn_seq`; 409 if a turn is running or no session is open |
 | `GET /events` | The SSE stream | Events below |
-| `POST /session/start` | Open a session. If the previous session has no final recap, it is written first. The opening narration is stored as turn 0 and streamed | 202 with `session_id` |
-| `POST /session/end` | Close the session; the worker writes the final recap | 202 |
+| `POST /session/start` | Open a session of `{campaign_id}`; accepting a `ready` premise makes the campaign `active`. Any other open session is closed first, and any session missing its final recap gets one. The opening (turn 0) or a resume turn is then streamed | 202 with `session_id` |
+| `POST /session/end` | Close the open session; the worker writes the final recap, then a `VACUUM INTO` backup | 202; 409 while a turn is running |
 | `POST /inventory/{item_id}/equip`, `/unequip` | Direct equip actions | 200 with new state; 409 while a turn is running or an encounter is active |
 
 | Event | Payload | When |
 | --- | --- | --- |
-| `narration_delta` | turn\_id, text | While the final round streams |
-| `roll` | turn\_id, purpose, expr, dice, total, target, outcome | After each engine roll |
-| `state_changed` | turn\_id (empty for direct actions) | After a turn commits or a direct action |
-| `turn_done` | turn\_id | After the commit |
-| `error` | turn\_id, message, retryable | When a turn fails |
+| `narration_delta` | turn\_seq, text | While the final round streams |
+| `roll` | turn\_seq, purpose, expr, dice, total, target, outcome | After each engine roll |
+| `state_changed` | turn\_seq (empty for direct actions) | After a turn commits or a direct action |
+| `turn_done` | turn\_seq | After the commit |
+| `error` | turn\_seq, message, retryable | When a turn fails |
 | `campaign_ended` | campaign\_id, ending | After `end_campaign` commits |
 
-There is one player, so there is one stream. Events have no ids and are not buffered: a browser that reconnects re-fetches `GET /log` and `GET /state` instead (Turn lifecycle 9).
+There is one player, so every event goes to every connected stream (a second tab sees the same turn). Events have no ids and are not buffered: a browser that reconnects re-fetches `GET /log` and `GET /state` instead (Turn lifecycle 9).
 
 ## Non-functional requirements
 
@@ -445,7 +453,7 @@ Each milestone ends in something testable, the container comes first so every la
 2. **M1: Engine and terminal loop.** Data layer and schema (SQLAlchemy ORM, Alembic migrations), dice, every v1 mechanics tool (all tools except the story tools, which come in M3, and the lookups, which come in M2), the in-memory state tree, three class templates, and monster fixtures (five SRD records copied verbatim from 5e-database), plus the turn orchestrator (stripped tool-round text, the narration-only final call, commit and failure paths) driven by a command-line loop. *Exit: in the terminal, a scene with a skill check, a contest and a fight against three monsters, resolved with resolve\_npc\_turns, applies a condition and reaches death saves, and unit tests cover each tool, with a fake Claude client for the tool loop.*
 3. **M2: Rules grounding.** SRD import into the `srd_*` tables replacing the fixtures, the FTS5 index, keyword retrieval, `lookup_rule` and `lookup_srd`. *Exit: encounters use real stat blocks, and a grapple uses `contest` with the grappling rules in context.*
 4. **M3: Story director.** Setup inputs as terminal flags, bible generation with schema and code validation, a hand-written one-shot bible fixture, story tables, the story tools (`move_to`, `advance_beat`, `tick_clock`, `reveal_clue`, `end_campaign`), director block, stall detection and endings. *Exit: a one-shot plays from its opening hook to a valid ending in the terminal, and a scripted idle run triggers a clue within 8 turns.*
-5. **M4: Server and streaming.** FastAPI endpoints, the SSE stream wired to the M1 turn orchestrator, both cache breakpoints, the token budget, background recaps, and session start and end. *Exit: a turn submitted with curl streams rolls and narration; a forced API failure leaves game state unchanged and saves a failed turn row; turn 2 reports cached tokens; a session started without the previous final recap writes it first; campaign creation returns at once and the campaign shows as ready when its bible is saved.*
+5. **M4: Server and streaming.** FastAPI endpoints (including regenerate, retire, equip and unequip), the SSE stream wired to the M1 turn orchestrator on a turn thread, a job thread for bible generation and recaps, campaign-wide turn numbering, campaign-scoped encounters, both cache breakpoints, the token budget, background recaps, resume turns, session start and end with `VACUUM INTO` backups. *Exit: a turn submitted with curl streams rolls and narration; a forced API failure leaves game state unchanged and saves a failed turn row; turn 2 reports cached tokens; a session started without the previous final recap writes it first; campaign creation returns at once and the campaign shows as ready when its bible is saved. Cached tokens and curl streaming are checked by hand against the real API; the rest, including `cache_control` placement, is covered by tests with the fake Claude client. Databases from before M4 are not migrated.*
 6. **M5: Web UI (v1 release).** Setup wizard, sheet with conditions and visible clocks, log with roll lines, direct equip actions, reload recovery, campaign ending and the About page. *Exit: the success criteria in the Overview are met on the Pi.*
 7. **M6: v2.** World graph, scenes and scene recall, DM notes (which also hold rulings), spellcasting with spell slots, a full character builder, adventure import with solo scaling, between-session replanning, and optional non-fantasy reskins. *Exit: an NPC introduced in session 1 is recalled correctly in session 3 without replaying old turns, a spellcaster completes a fight, and an imported one-page dungeon plays to an ending using its original room text.*
 8. **M7: Voice (v3).** Push-to-talk speech-to-text feeding `POST /action`, and Piper text-to-speech reading narration aloud. *Exit: a full scene played by voice alone.*

@@ -1,7 +1,7 @@
 """Campaign setup (session zero): generate or load a Campaign bible, validate it, seed the story tables.
 
-The caller (the terminal loop, later the web wizard) shows the premise and decides whether to accept
-it; a rejected premise is replaced by a fresh `start_campaign` call.
+The terminal loop calls `start_campaign` in one step. The server inserts a `generating` Campaign row with the
+setup choices and runs `build_campaign` on the job thread, which fills that row and sets `ready` (or `failed`).
 """
 
 from __future__ import annotations
@@ -13,7 +13,6 @@ from sqlalchemy.orm import sessionmaker
 
 from pidm.bible import ACTS, Bible, validate
 from pidm.claude import ClaudeClient
-from pidm.engine import load_state
 from pidm.models import Beat, Campaign, Clock, Clue, Secret, Session
 from pidm.story import end
 from pidm.templates import create_character
@@ -86,10 +85,22 @@ def _generate(client: ClaudeClient, setup: Setup) -> Bible:
     raise SetupError(f"No valid Campaign bible after {ATTEMPTS} attempts: {'; '.join(errors)}")
 
 
-def _seed(bible: Bible, setup: Setup) -> Campaign:
-    camp = Campaign(name=bible.title, premise=bible.premise, setting=setup.setting, tone=setup.tone,
-                    length=setup.length, lines=setup.lines, veils=setup.veils, bible=bible.model_dump(),
-                    current_act=1, current_location=bible.start_location, last_progress_turn=0)
+def new_campaign(setup: Setup, template: str, name: str | None, status: str) -> Campaign:
+    """A Campaign row holding the setup choices, before its bible exists."""
+    return Campaign(name="", premise="", setting=setup.setting, tone=setup.tone, length=setup.length,
+                    lines=setup.lines, veils=setup.veils, hook=setup.hook, template=template,
+                    character_name=name or "", status=status)
+
+
+def setup_of(camp: Campaign) -> Setup:
+    return Setup(setting=camp.setting, tone=camp.tone, length=camp.length, lines=camp.lines, veils=camp.veils,
+                 hook=camp.hook)
+
+
+def _seed(camp: Campaign, bible: Bible) -> None:
+    """Fill a Campaign row with its bible, story tables and Character."""
+    camp.name, camp.premise, camp.bible = bible.title, bible.premise, bible.model_dump()
+    camp.current_act, camp.current_location, camp.last_progress_turn = 1, bible.start_location, 0
     acts = {a.slug: n for n, a in enumerate(bible.acts, 1)}
     for n, act in enumerate(bible.acts, 1):
         camp.beats += [Beat(slug=b.slug, act=n, goal=b.goal, requires=b.requires, status="open") for b in act.beats]
@@ -99,7 +110,14 @@ def _seed(bible: Bible, setup: Setup) -> Campaign:
             for c in bible.clues if c.secret == s.slug]))
     camp.clocks += [Clock(slug=c.slug, name=c.name, segments=c.segments, filled=0, consequence=c.consequence,
                           is_main=c.main, visible=False) for c in bible.clocks]
-    return camp
+    create_character(camp, camp.template, camp.character_name or None)
+
+
+def clear_story(camp: Campaign) -> None:
+    """Remove a `ready` Campaign's bible, story rows and Character so a new bible can be generated."""
+    camp.beats, camp.secrets, camp.clocks, camp.quests = [], [], [], []
+    camp.character = None
+    camp.name, camp.premise, camp.bible, camp.setup_error = "", "", None, ""
 
 
 def start_campaign(factory: sessionmaker, setup: Setup, template: str, name: str | None, *,
@@ -111,8 +129,8 @@ def start_campaign(factory: sessionmaker, setup: Setup, template: str, name: str
         b, errors = validate(bible, setup.length)
         if errors:
             raise SetupError(f"Invalid Campaign bible: {'; '.join(errors)}")
-    camp = _seed(b, setup)
-    create_character(camp, template, name)
+    camp = new_campaign(setup, template, name, "active")
+    _seed(camp, b)
     sess = Session(campaign=camp)
     with factory() as db:
         db.add(camp)
@@ -120,13 +138,36 @@ def start_campaign(factory: sessionmaker, setup: Setup, template: str, name: str
     return sess
 
 
+def build_campaign(factory: sessionmaker, client: ClaudeClient, campaign_id: int) -> None:
+    """The bible job: generate and validate a bible for a `generating` Campaign, then seed it as `ready`.
+
+    The Claude calls run outside any transaction; any failure leaves the Campaign `failed` with its error.
+    """
+    with factory() as db:
+        setup = setup_of(db.get(Campaign, campaign_id))
+    try:
+        bible = _generate(client, setup)
+        error = None
+    except Exception as e:  # SetupError, or a Claude API error after retries
+        bible, error = None, str(e) or type(e).__name__
+    with factory() as db:
+        camp = db.get(Campaign, campaign_id)
+        if bible is None:
+            camp.status, camp.setup_error = "failed", error
+        else:
+            _seed(camp, bible)
+            db.add(camp.character)  # SQLAlchemy 2 does not cascade the backref into the open session
+            camp.status = "ready"
+        db.commit()
+
+
 def load_bible(path: str) -> dict:
     with open(path, encoding="utf-8") as f:
         return json.load(f)
 
 
-def retire(factory: sessionmaker, session_id: int) -> None:
+def retire(factory: sessionmaker, campaign_id: int) -> None:
     """The player ends the Campaign: no Claude call and no epilogue."""
     with factory() as db:
-        end(load_state(db, session_id, None).campaign, "retired")
+        end(db.get(Campaign, campaign_id), "retired")
         db.commit()

@@ -17,6 +17,7 @@ def make_engine(db_path: str) -> Engine:
         cur = dbapi_conn.cursor()
         cur.execute("PRAGMA journal_mode=WAL")
         cur.execute("PRAGMA foreign_keys=ON")
+        cur.execute("PRAGMA busy_timeout=5000")  # the turn and job threads both write (ADR 0001)
         cur.close()
 
     return engine
