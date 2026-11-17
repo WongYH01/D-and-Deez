@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import json
+import random
+from importlib import resources
+
 
 def _has_key(value, key: str) -> bool:
     if isinstance(value, dict):
@@ -99,3 +103,24 @@ def test_multiattack_skips_parts_the_engine_cannot_resolve(make_game):
     g.script(1, 20).ok("start_encounter", monsters=[{"monster": "hydra"}])
     r = g.script(1).ok("resolve_npc_turns")
     assert [a["action"] for a in r["turns"][0]["attacks"]] == ["Bite"]
+
+
+def test_every_srd_monster_plays_through_the_engine(make_game):
+    # R4, R16: every imported Stat block either fights without crashing or is refused at start_encounter.
+    monsters = json.loads(resources.files("pidm.data").joinpath("5e-SRD-Monsters.json").read_text(encoding="utf-8"))
+    refused = set()
+    for i, m in enumerate(monsters):
+        g = make_game(("fighter", "rogue", "barbarian")[i % 3])
+        rnd = random.Random(i)
+        g.dice.rng = lambda sides: rnd.randint(1, sides)
+        if "error" in g.call("start_encounter", monsters=[{"monster": m["index"]}]):
+            refused.add(m["index"])
+        else:
+            name = g.state.encounter.combatants[0].name
+            for _ in range(3):
+                g.call("resolve_npc_turns")
+                g.call("contest", a="character", b=name, effect="grapple")
+                g.call("attack", target=name, weapon="unarmed")
+            g.call("end_encounter")
+        g.db.close()  # one pooled connection per Game; release it before the next
+    assert refused == {"frog", "rug-of-smothering", "sea-horse", "shrieker", "vampire-mist"}
