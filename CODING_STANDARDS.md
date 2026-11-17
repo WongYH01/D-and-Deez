@@ -22,7 +22,7 @@ Set a Roll's `target` and `outcome` before calling `dice.record`: recording emit
 
 ## State changes go through the state tree
 
-Tools change ORM objects loaded for the Turn; only the orchestrator commits (ADR 0002). Replace JSON columns (`conditions`, `flags`, `feature_uses`, `Encounter.state`) with a new value instead of mutating them in place, so SQLAlchemy sees the change.
+Tools change ORM objects loaded for the Turn; only the orchestrator commits a Turn (ADR 0002). Work outside a Turn (direct actions such as equip and retire, Session open and close, the bible and Recap jobs) commits its own short transaction, and a direct action that changes game state holds the server's busy lock so it never lands mid-Turn. Replace JSON columns (`conditions`, `flags`, `feature_uses`, `Encounter.state`) with a new value instead of mutating them in place, so SQLAlchemy sees the change.
 
 ## Engine tests use the four seams
 

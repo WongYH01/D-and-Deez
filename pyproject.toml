@@ -20,3 +20,5 @@ pidm = ["data/*.json", "migrations/*.mako", "migrations/versions/*.py"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# An SAWarning often means a row silently was not saved (e.g. SQLAlchemy 2 no longer cascades through backrefs).
+filterwarnings = ["error::sqlalchemy.exc.SAWarning"]

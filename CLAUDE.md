@@ -6,6 +6,8 @@ Tests run on the host in the repo's venv: `.venv/Scripts/pytest` (Windows) or `.
 
 Tool registry: the `TOOLS` dict at the end of `src/pidm/tools.py`; story tools live in `src/pidm/story.py`. Test seams and `FakeClaude`: `tests/conftest.py` (seams listed in `CODING_STANDARDS.md`).
 
+Server: `create_app` in `src/pidm/app.py` (Seam 4, tests in `tests/test_server.py`). Recaps: `src/pidm/recap.py`.
+
 ## Agent skills
 
 ### Issue tracker
