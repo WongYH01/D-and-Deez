@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pidm"
+version = "0.0.0"
+description = "Pi Dungeon Master: single-player, text-based D&D 5e web app."
+requires-python = ">=3.11"
+dependencies = ["fastapi", "uvicorn"]
+
+[project.optional-dependencies]
+dev = ["pytest", "httpx"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -1,0 +1,3 @@
+# No prose in Tool rounds; only the final Tool round streams
+
+Claude is told to write no prose in a Tool round that calls tools, and any text it writes anyway is never shown and is stripped from the assistant message before the next Tool round. Only the final Tool round, which calls no tools, streams to the player as Narration. We chose this over streaming every Tool round because earlier text can state an outcome ("you hit") before the engine has rolled, and text already shown cannot be taken back when a Turn fails. The cost is a slower first word on Turns with tools, which Roll events and a thinking indicator cover.
