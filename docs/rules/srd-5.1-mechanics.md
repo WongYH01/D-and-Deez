@@ -2416,3 +2416,6 @@ The owner's decisions on D1–D10. Where a ruling departs from a quoted rule abo
 - **R10 (D9, surprise).** `start_encounter` takes `surprise: none | character | monsters`, set by Claude from a prior Stealth check.
 - **R11 (D10, rounding).** Round down unless the specific rule says round up. This is a house ruling (the Player's Handbook convention), not SRD text.
 - **R12 (races).** Templates fix the race: Human Fighter, Lightfoot Halfling Rogue, Half-Orc Barbarian. Player-chosen races wait for the v2 character builder.
+- **R13 (Dodge).** A `dodge()` tool: until the Character's next turn, attacks against it have disadvantage and its Dex saves have advantage; it ends if the Character is incapacitated.
+- **R14 (two-weapon fighting).** `attack` takes `offhand`: both weapons must be light, it costs the bonus action, and no positive ability modifier is added to damage.
+- **R15 (grapple and shove).** `contest` takes an optional `effect` (`grapple`, `shove_prone`, `escape`); on a win the engine sets or clears the condition.

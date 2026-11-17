@@ -137,8 +137,9 @@ Breakpoint 2 means rounds 2 to 4 of the same turn reread everything up to the ac
 | `roll(expr, purpose)` | Rolls dice such as `2d6+3` with the operating system's random source (no fixed seed) and logs the purpose |
 | `skill_check(character, skill, dc)` | d20 + computed bonus against a DC |
 | `saving_throw(target, ability, dc)` | d20 + save bonus against a DC; applies the effect on failure when given |
-| `contest(a, skill_a, b, skill_b)` | Opposed check, for grapples, shoves, Stealth against Perception |
-| `attack(attacker, target, weapon, cover, reckless, nonlethal)` | Roll to hit against AC, roll damage on a hit, apply it, return the result; spends ammunition |
+| `contest(a, skill_a, b, skill_b, effect)` | Opposed check, for grapples, shoves, Stealth against Perception; `effect` (grapple, shove\_prone, escape) sets or clears the condition on a win |
+| `attack(attacker, target, weapon, cover, reckless, nonlethal, offhand)` | Roll to hit against AC, roll damage on a hit, apply it, return the result; spends ammunition |
+| `dodge()` | Attacks against the Character have disadvantage until its next turn |
 | `hide()` | Stealth against the Combatants' best passive Perception; a hidden Character attacks with advantage |
 | `apply_damage` / `heal` | Changes HP within limits, applies resistances, starts death saves at 0 HP |
 | `set_condition(target, condition, on, duration)` | Adds or removes an SRD condition with an optional duration in rounds |
