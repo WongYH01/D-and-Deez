@@ -9,11 +9,15 @@ One story from setup to an Ending, played by one character over one or more Sess
 _Avoid_: Game, adventure (reserved for imported human-written material in v2)
 
 **Session**:
-One sitting of play within a Campaign, opened and closed by the player, with its own Recap.
+One sitting of play within a Campaign, opened and closed by the player, with its own Recap. At most one Session is open at a time, across all Campaigns.
 _Avoid_: Game night, run
 
+**Open session**:
+The one Session not yet closed; every player action goes to it. Opening a Session closes any other first.
+_Avoid_: Current session, active session
+
 **Turn**:
-One player action, resolved by the engine and narrated by Claude.
+One player action, resolved by the engine and narrated by Claude. Turns are numbered across the whole Campaign, not per Session; Turn 0 is the Campaign's opening.
 _Avoid_: Round, move, step
 
 **Tool round**:
