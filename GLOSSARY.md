@@ -46,6 +46,10 @@ _Avoid_: PC, player, hero
 A pre-made level 1 character for one class.
 _Avoid_: Preset, archetype, build
 
+**Feature**:
+A class ability with limited uses that recover on a rest, such as Rage or Second Wind, or an automatic bonus such as Sneak Attack.
+_Avoid_: Ability (that is Strength, Dexterity and the rest), power, skill
+
 **Encounter**:
 A fight, from start to end, with its Combatants.
 _Avoid_: Combat, battle
