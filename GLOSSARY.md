@@ -97,11 +97,19 @@ A story milestone within an Act that moves the plot forward.
 _Avoid_: Milestone, objective, plot point
 
 **Secret**:
-A revelation the player needs in order to progress.
+A revelation the player needs in order to progress, belonging to one Act; learned as soon as any one of its Clues is revealed.
 _Avoid_: Mystery, twist
 
+**Location**:
+A place named in the Campaign bible; the Character is always at exactly one. Places Claude invents during play are not Locations.
+_Avoid_: Area, room, scene
+
+**Quest**:
+A goal the Character is pursuing, shown to the player in the quest log; Claude may add one at any time. Unrelated to Beats.
+_Avoid_: Objective, task
+
 **Clue**:
-One piece of evidence, placed in a location, that points to a Secret; every Secret has at least three.
+One piece of evidence, placed in a Location, that points to a Secret; every Secret has at least three.
 _Avoid_: Hint, lead
 
 **Clock**:
@@ -117,7 +125,7 @@ The per-Turn summary of story state given to Claude: current Act and goal, open 
 _Avoid_: Story context, plot state
 
 **Stall**:
-Eight Turns in a row with no Beat, Clue or Clock progress.
+Eight Turns in a row with no Beat advanced and no Clue revealed; moving and Clock ticks do not count as progress.
 _Avoid_: Idle, stuck
 
 **Ending**:

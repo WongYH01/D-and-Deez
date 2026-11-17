@@ -76,15 +76,15 @@ All data lives in one SQLite file in WAL mode on a mounted volume, so the sheet 
 
 | Table | Key columns | Written by | Phase |
 | --- | --- | --- | --- |
-| `campaigns` | id, name, setting, tone, length, ruleset, lines, veils, status, ending | Setup | v1 |
+| `campaigns` | id, name, setting, tone, length, ruleset, lines, veils, bible (JSON), current\_act, current\_location, last\_progress\_turn, status, ending | Setup, engine | v1 |
 | `characters` | id, campaign\_id, name, template, level, xp, hp\_current, hp\_max, ac, ability scores, gold, conditions, death\_saves, hit\_dice, feature\_uses | Engine | v1 |
 | `skills` | character\_id, skill, proficient | Engine | v1 |
 | `inventory` | character\_id, item\_ref, qty, equipped | Engine | v1 |
 | `quests` | id, campaign\_id, title, status, notes | Engine | v1 |
-| `beats` | id, campaign\_id, act, order, goal, status, resolved\_turn | Setup, engine | v1 |
-| `clocks` | id, campaign\_id, name, segments, filled, consequence, visible | Setup, engine | v1 |
-| `secrets` | id, campaign\_id, revelation, beat\_id | Setup | v1 |
-| `clues` | id, secret\_id, description, location, revealed\_turn | Setup, engine | v1 |
+| `beats` | id, campaign\_id, slug, act, goal, requires, status, resolved\_turn | Setup, engine | v1 |
+| `clocks` | id, campaign\_id, slug, name, segments, filled, consequence, is\_main, visible | Setup, engine | v1 |
+| `secrets` | id, campaign\_id, slug, act, revelation, learned\_turn | Setup, engine | v1 |
+| `clues` | id, secret\_id, slug, description, location, revealed\_turn | Setup, engine | v1 |
 | `encounters` | id, session\_id, status, round, active\_combatant | Engine | v1 |
 | `combatants` | encounter\_id, name, monster\_ref, hp, ac, initiative, conditions | Engine | v1 |
 | `sessions` | id, campaign\_id, started\_at, ended\_at, rolling\_recap, final\_recap | Orchestrator, worker | v1 |
@@ -111,7 +111,7 @@ From v2, adventure import adds `sources`, `source_chunks` (FTS5) and `campaigns.
 
 Claude narrates scenes and decides what to attempt; every mechanical and plot result comes back from a tool. The prompt is ordered so that both the campaign-level material and the per-turn context are served from the cache on every tool round.
 
-**Models (configurable).** Claude Sonnet 5.5 (`claude-sonnet-5-5`) narrates and plans the campaign. Claude Haiku 5.5 (`claude-haiku-5-5`) writes recaps and scene summaries. Whether Opus is worth its extra latency for narration or campaign planning is an open question.
+**Models (configurable).** Claude Sonnet 5.5 (`claude-sonnet-5-5`) narrates and plans the campaign. Claude Haiku 5.5 (`claude-haiku-5-5`) writes recaps and scene summaries. The bible model is set by `PIDM_PLAN_MODEL` (default Sonnet), so Opus can be tried for planning without a code change. Whether Opus is worth its extra latency for narration or campaign planning is an open question.
 
 **Prompt layout, in cache order**
 
@@ -149,10 +149,13 @@ Breakpoint 2 means rounds 2 to 4 of the same turn reread everything up to the ac
 | `add_item` / `remove_item` / `adjust_gold` | Changes inventory and gold; rejects removing what the character lacks |
 | `grant_xp(amount, reason)` | Adds XP and levels up at the threshold |
 | `update_quest(id, status, note)` | Creates or updates a quest |
-| `advance_beat(beat_id, outcome)` | Marks a story beat resolved, if it belongs to the current act |
-| `tick_clock(clock_id, segments, reason)` | Fills a clock; returns its consequence when full |
-| `reveal_clue(clue_id)` | Marks a clue found and returns its text |
+| `move_to(location)` | Sets the Character's current Location; accepts only bible Locations |
+| `advance_beat(beat, outcome)` | Marks a Beat of the current Act resolved, in any order, if its `requires` are met; resolving an Act's last Beat opens the next Act, and resolving the final Beat reports that the Victory condition is met |
+| `tick_clock(clock, segments, reason)` | Fills a Clock by 1 to 3 segments; a full Clock ignores further ticks and returns its consequence |
+| `reveal_clue(clue)` | Marks any unrevealed Clue of the current Act found and returns its text; the first Clue of a Secret marks the Secret learned |
 | `end_campaign(ending)` | Accepted only when an ending condition holds (see Story design) |
+
+Story tools take the bible's slugs (`act1.beat2`, `clue.ledger.1`, `clock.ritual`, `loc.mill`); an unknown slug returns an error listing the valid ones.
 | `lookup_rule(query)` / `lookup_srd(kind, slug)` | Full-text rule search; a monster, spell or item record |
 
 v2 adds `cast_spell`, `add_fact` / `retire_fact`, `write_note` (which also records rulings) and `end_scene`. The engine validates every argument against the turn's in-memory state tree; an invalid call returns an error message to Claude rather than changing anything, so Claude can correct itself within the turn.
@@ -183,7 +186,7 @@ The plot is planned before play in a hidden campaign bible, tracked in tables du
 
 ### 1. Campaign setup (session zero)
 
-Before the first session the player fills in a short setup form.
+Before the first session the player fills in a short setup form. Until the web UI exists, the M3 terminal loop takes the same choices as flags (`--setting`, `--tone`, `--length`, `--lines`, `--veils`, `--hook`), or `--bible PATH` to load a hand-written bible and skip generation.
 
 | Choice | Options in v1 | Effect |
 | --- | --- | --- |
@@ -197,7 +200,7 @@ The SRD's mechanics are fantasy: swords, armour and monsters. A cyberpunk or sci
 
 ### 2. The campaign bible
 
-One Claude call turns the setup into a campaign bible, returned as JSON and checked against a schema before it is saved. A bible that fails validation is regenerated. It contains:
+One Claude call turns the setup into a campaign bible, returned as a forced tool call whose input schema comes from the bible's Pydantic models, so generated and hand-written bibles pass through the same schema. Code then checks what a schema cannot: 2 to 4 beats per act, at least three clues per secret spread over at least two locations, exactly one main clock, a victory and a defeat ending, every slug reference resolving, and an act count that matches the length (1 for a one-shot, 3 for a short campaign). A bible that fails is regenerated with the errors fed back, up to three attempts in all; then setup fails. Every item carries a slug, each secret belongs to an act, and a beat may list the beats or secrets it `requires`. It contains:
 
 - **Premise and central question:** what the story is about and what the player must decide or stop.
 - **Antagonist:** their goal, their plan, and what happens if no one interferes.
@@ -208,7 +211,7 @@ One Claude call turns the setup into a campaign bible, returned as JSON and chec
 - **Endings:** victory and defeat, each with the condition that triggers it.
 - **Opening scene:** a hook that starts mid-action and connects to the character's backstory.
 
-Beats, clocks, secrets and clues go into their own tables, and the full bible goes into the cached system prompt. The player never sees it.
+Beats, clocks, secrets and clues go into their own tables, and the full bible goes into the cached system prompt. The player never sees it; after generation they see only a spoiler-free premise to accept or regenerate. v1 has no ready-made bibles for players; a hand-written one-shot bible exists only as a test fixture. Ready-made bibles may come with adventure import in v2.
 
 ### 3. Starting
 
@@ -216,11 +219,12 @@ The first session opens with the bible's opening scene, narrated as turn 0, endi
 
 ### 4. Progressing
 
-Every turn the dynamic context carries a director block: the current act and its goal, open beats, clues available in the current location, clock states, and turns since the last progress.
+Every turn the dynamic context carries a director block of about 150 to 300 tokens, never dropped from the budget: the current act and its goal, the current location, open beats with any unmet `requires`, clues at the current location for secrets not yet learned, learned secrets in one line each, every clock as `name n/m`, and turns since the last progress.
 
-- Claude calls `advance_beat` when a beat's goal is met, `reveal_clue` when a clue is found, and `tick_clock` when time passes, the player fails a check with consequences, or the player ignores a threat.
+- Claude calls `move_to` when the Character reaches a bible location, `advance_beat` when a beat's goal is met, `reveal_clue` when a clue is found, and `tick_clock` when time passes, the player fails a check with consequences, or the player ignores a threat. Places Claude invents are not locations and need no call.
+- A secret is learned as soon as any one of its clues is revealed; its other clues then leave the director block.
 - When an act's beats are all resolved, the engine opens the next act.
-- **Stall detection:** if 8 turns pass with no beat, clue or clock progress, the director block tells Claude to bring a clue or complication to the player, such as a messenger arriving or an ambush.
+- **Stall detection:** if 8 turns pass with no beat advanced and no clue revealed, the director block names one unrevealed clue of the current act from another location and tells Claude to bring it to the player, such as by a messenger arriving or an ambush. The nudge repeats every turn until progress. Moving and clock ticks do not count as progress, so wandering or failed checks cannot hide a stalled plot.
 - **Off-script play is allowed:** the bible is a guide, not a script. Claude may add minor NPCs and places freely; the bible itself does not change in v1.
 
 ### 5. Replanning between sessions (v2)
@@ -238,7 +242,9 @@ Deferred to v2. In v1 the bible stays fixed for the whole campaign: three clues 
 | Fallen hero | The character dies after three failed death saves |
 | Retired | The player ends the campaign from the UI |
 
-Claude then writes an epilogue (a narrow victory, with the clock nearly full or a secret still hidden, can be told as bittersweet), the campaign is marked complete, and the character can be carried into a new campaign.
+When the main clock fills or the final beat resolves, the director block tells Claude the condition is met and to call `end_campaign`. If Claude does not call it in the turn the main clock fills, the orchestrator records Defeat anyway, so play cannot continue past a full main clock. Retiring needs no Claude call: the player confirms and the engine records it, with no epilogue.
+
+For the other endings Claude's final narration is the epilogue (a narrow victory, with the clock nearly full or a secret still hidden, can be told as bittersweet), and the campaign is marked complete. Carrying the character into a new campaign comes with the setup wizard, not M3.
 
 ## Adventure import (v2)
 
@@ -274,7 +280,7 @@ Each kind of memory is stored in the shape that fits it and fetched by code befo
 | Layer | Holds | Store | How it reaches the prompt | Phase |
 | --- | --- | --- | --- | --- |
 | Game state | Sheet, conditions, inventory, quests, current encounter | Game tables | Full snapshot every turn | v1 |
-| Story state | Current act, open beats, local clues, clocks, turns since progress | Story tables | Director block every turn | v1 |
+| Story state | Current act and location, open beats, local clues, learned secrets, clocks, turns since progress | Story tables | Director block every turn | v1 |
 | Campaign plan | The campaign bible | `campaigns`, story tables | Cached system prompt | v1 |
 | Recent turns | Last 8 action and narration pairs, verbatim | `turns` | Messages before the final user message | v1 |
 | Session recap | Rolling summary of this session plus the last session's final recap | `sessions` | Always in the dynamic context | v1 |
@@ -438,7 +444,7 @@ Each milestone ends in something testable, the container comes first so every la
 1. **M0: Container and dev setup.** Dockerfile, `compose.yaml`, dev override with auto-reload, and `/health`. *Exit: the image builds on the PC and on the Pi and answers* `/health` *on both.*
 2. **M1: Engine and terminal loop.** Data layer and schema (SQLAlchemy ORM, Alembic migrations), dice, every v1 mechanics tool (all tools except the story tools, which come in M3, and the lookups, which come in M2), the in-memory state tree, three class templates, and monster fixtures (five SRD records copied verbatim from 5e-database), plus the turn orchestrator (stripped tool-round text, the narration-only final call, commit and failure paths) driven by a command-line loop. *Exit: in the terminal, a scene with a skill check, a contest and a fight against three monsters, resolved with resolve\_npc\_turns, applies a condition and reaches death saves, and unit tests cover each tool, with a fake Claude client for the tool loop.*
 3. **M2: Rules grounding.** SRD import into the `srd_*` tables replacing the fixtures, the FTS5 index, keyword retrieval, `lookup_rule` and `lookup_srd`. *Exit: encounters use real stat blocks, and a grapple uses `contest` with the grappling rules in context.*
-4. **M3: Story director.** Setup inputs, bible generation with schema validation, story tables, the story tools (`advance_beat`, `tick_clock`, `reveal_clue`, `end_campaign`), director block, stall detection and endings. *Exit: a one-shot plays from its opening hook to a valid ending in the terminal, and a scripted idle run triggers a clue within 8 turns.*
+4. **M3: Story director.** Setup inputs as terminal flags, bible generation with schema and code validation, a hand-written one-shot bible fixture, story tables, the story tools (`move_to`, `advance_beat`, `tick_clock`, `reveal_clue`, `end_campaign`), director block, stall detection and endings. *Exit: a one-shot plays from its opening hook to a valid ending in the terminal, and a scripted idle run triggers a clue within 8 turns.*
 5. **M4: Server and streaming.** FastAPI endpoints, the SSE stream wired to the M1 turn orchestrator, both cache breakpoints, the token budget, background recaps, and session start and end. *Exit: a turn submitted with curl streams rolls and narration; a forced API failure leaves game state unchanged and saves a failed turn row; turn 2 reports cached tokens; a session started without the previous final recap writes it first; campaign creation returns at once and the campaign shows as ready when its bible is saved.*
 6. **M5: Web UI (v1 release).** Setup wizard, sheet with conditions and visible clocks, log with roll lines, direct equip actions, reload recovery, campaign ending and the About page. *Exit: the success criteria in the Overview are met on the Pi.*
 7. **M6: v2.** World graph, scenes and scene recall, DM notes (which also hold rulings), spellcasting with spell slots, a full character builder, adventure import with solo scaling, between-session replanning, and optional non-fantasy reskins. *Exit: an NPC introduced in session 1 is recalled correctly in session 3 without replaying old turns, a spellcaster completes a fight, and an imported one-page dungeon plays to an ending using its original room text.*
