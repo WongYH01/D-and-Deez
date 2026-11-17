@@ -1,0 +1,517 @@
+[
+  {
+    "index": "bandit",
+    "name": "Bandit",
+    "desc": "**Bandits** rove in gangs and are sometimes led by thugs, veterans, or spellcasters. Not all bandits are evil. Oppression, drought, disease, or famine can often drive otherwise honest folk to a life of banditry.\n\n**Pirates** are bandits of the high seas. They might be freebooters interested only in treasure and murder, or they might be privateers sanctioned by the crown to attack and plunder an enemy nation’s vessels.",
+    "size": "Medium",
+    "type": "humanoid",
+    "subtype": "any race",
+    "alignment": "any non-lawful alignment",
+    "armor_class": [
+      {
+        "type": "armor",
+        "value": 12,
+        "armor": [
+          {
+            "index": "leather-armor",
+            "name": "Leather Armor",
+            "url": "/api/2014/equipment/leather-armor"
+          }
+        ]
+      }
+    ],
+    "hit_points": 11,
+    "hit_dice": "2d8",
+    "hit_points_roll": "2d8+2",
+    "speed": {
+      "walk": "30 ft."
+    },
+    "strength": 11,
+    "dexterity": 12,
+    "constitution": 12,
+    "intelligence": 10,
+    "wisdom": 10,
+    "charisma": 10,
+    "proficiencies": [],
+    "damage_vulnerabilities": [],
+    "damage_resistances": [],
+    "damage_immunities": [],
+    "condition_immunities": [],
+    "senses": {
+      "passive_perception": 10
+    },
+    "languages": "any one language (usually Common)",
+    "challenge_rating": 0.125,
+    "proficiency_bonus": 2,
+    "xp": 25,
+    "actions": [
+      {
+        "name": "Scimitar",
+        "desc": "Melee Weapon Attack: +3 to hit, reach 5 ft., one target. Hit: 4 (1d6 + 1) slashing damage.",
+        "attack_bonus": 3,
+        "damage": [
+          {
+            "damage_type": {
+              "index": "slashing",
+              "name": "Slashing",
+              "url": "/api/2014/damage-types/slashing"
+            },
+            "damage_dice": "1d6+1"
+          }
+        ]
+      },
+      {
+        "name": "Light Crossbow",
+        "desc": "Ranged Weapon Attack: +3 to hit, range 80/320 ft., one target. Hit: 5 (1d8 + 1) piercing damage.",
+        "attack_bonus": 3,
+        "damage": [
+          {
+            "damage_type": {
+              "index": "piercing",
+              "name": "Piercing",
+              "url": "/api/2014/damage-types/piercing"
+            },
+            "damage_dice": "1d8+1"
+          }
+        ]
+      }
+    ],
+    "image": "/api/images/monsters/bandit.png",
+    "url": "/api/2014/monsters/bandit"
+  },
+  {
+    "index": "bandit-captain",
+    "name": "Bandit Captain",
+    "desc": "It takes a strong personality, ruthless cunning, and a silver tongue to keep a gang of bandits in line. The **bandit captain** has these qualities in spades.\n\nIn addition to managing a crew of selfish malcontents, the **pirate captain** is a variation of the bandit captain, with a ship to protect and command. To keep the crew in line, the captain must mete out rewards and punishment on a regular basis.\n\nMore than treasure, a bandit captain or pirate captain craves infamy. A prisoner who appeals to the captain’s vanity or ego is more likely to be treated fairly than a prisoner who does not or claims not to know anything of the captain’s colorful reputation.",
+    "size": "Medium",
+    "type": "humanoid",
+    "subtype": "any race",
+    "alignment": "any non-lawful alignment",
+    "armor_class": [
+      {
+        "type": "armor",
+        "value": 15,
+        "armor": [
+          {
+            "index": "studded-leather-armor",
+            "name": "Studded Leather Armor",
+            "url": "/api/2014/equipment/studded-leather-armor"
+          }
+        ]
+      }
+    ],
+    "hit_points": 65,
+    "hit_dice": "10d8",
+    "hit_points_roll": "10d8+20",
+    "speed": {
+      "walk": "30 ft."
+    },
+    "strength": 15,
+    "dexterity": 16,
+    "constitution": 14,
+    "intelligence": 14,
+    "wisdom": 11,
+    "charisma": 14,
+    "proficiencies": [
+      {
+        "value": 4,
+        "proficiency": {
+          "index": "saving-throw-str",
+          "name": "Saving Throw: STR",
+          "url": "/api/2014/proficiencies/saving-throw-str"
+        }
+      },
+      {
+        "value": 5,
+        "proficiency": {
+          "index": "saving-throw-dex",
+          "name": "Saving Throw: DEX",
+          "url": "/api/2014/proficiencies/saving-throw-dex"
+        }
+      },
+      {
+        "value": 2,
+        "proficiency": {
+          "index": "saving-throw-wis",
+          "name": "Saving Throw: WIS",
+          "url": "/api/2014/proficiencies/saving-throw-wis"
+        }
+      },
+      {
+        "value": 4,
+        "proficiency": {
+          "index": "skill-athletics",
+          "name": "Skill: Athletics",
+          "url": "/api/2014/proficiencies/skill-athletics"
+        }
+      },
+      {
+        "value": 4,
+        "proficiency": {
+          "index": "skill-deception",
+          "name": "Skill: Deception",
+          "url": "/api/2014/proficiencies/skill-deception"
+        }
+      }
+    ],
+    "damage_vulnerabilities": [],
+    "damage_resistances": [],
+    "damage_immunities": [],
+    "condition_immunities": [],
+    "senses": {
+      "passive_perception": 10
+    },
+    "languages": "any two languages",
+    "challenge_rating": 2,
+    "proficiency_bonus": 2,
+    "xp": 450,
+    "actions": [
+      {
+        "name": "Multiattack",
+        "multiattack_type": "action_options",
+        "desc": "The captain makes three melee attacks: two with its scimitar and one with its dagger. Or the captain makes two ranged attacks with its daggers.",
+        "action_options": {
+          "choose": 1,
+          "type": "action",
+          "from": {
+            "option_set_type": "options_array",
+            "options": [
+              {
+                "option_type": "multiple",
+                "items": [
+                  {
+                    "option_type": "action",
+                    "action_name": "Scimitar",
+                    "count": 2,
+                    "type": "melee"
+                  },
+                  {
+                    "option_type": "action",
+                    "action_name": "Dagger",
+                    "count": 1,
+                    "type": "melee"
+                  }
+                ]
+              },
+              {
+                "option_type": "action",
+                "action_name": "Dagger",
+                "count": 2,
+                "type": "ranged"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "name": "Scimitar",
+        "desc": "Melee Weapon Attack: +5 to hit, reach 5 ft., one target. Hit: 6 (1d6 + 3) slashing damage.",
+        "attack_bonus": 5,
+        "damage": [
+          {
+            "damage_type": {
+              "index": "slashing",
+              "name": "Slashing",
+              "url": "/api/2014/damage-types/slashing"
+            },
+            "damage_dice": "1d6+3"
+          }
+        ]
+      },
+      {
+        "name": "Dagger",
+        "desc": "Melee or Ranged Weapon Attack: +5 to hit, reach 5 ft. or range 20/60 ft., one target. Hit: 5 (1d4 + 3) piercing damage.",
+        "attack_bonus": 5,
+        "damage": [
+          {
+            "damage_type": {
+              "index": "piercing",
+              "name": "Piercing",
+              "url": "/api/2014/damage-types/piercing"
+            },
+            "damage_dice": "1d4+3"
+          }
+        ]
+      }
+    ],
+    "reactions": [
+      {
+        "name": "Parry",
+        "desc": "The captain adds 2 to its AC against one melee attack that would hit it. To do so, the captain must see the attacker and be wielding a melee weapon."
+      }
+    ],
+    "image": "/api/images/monsters/bandit-captain.png",
+    "url": "/api/2014/monsters/bandit-captain"
+  },
+  {
+    "index": "goblin",
+    "name": "Goblin",
+    "size": "Small",
+    "type": "humanoid",
+    "subtype": "goblinoid",
+    "alignment": "neutral evil",
+    "armor_class": [
+      {
+        "type": "armor",
+        "value": 15,
+        "armor": [
+          {
+            "index": "leather-armor",
+            "name": "Leather Armor",
+            "url": "/api/2014/equipment/leather-armor"
+          },
+          {
+            "index": "shield",
+            "name": "Shield",
+            "url": "/api/2014/equipment/shield"
+          }
+        ]
+      }
+    ],
+    "hit_points": 7,
+    "hit_dice": "2d6",
+    "hit_points_roll": "2d6",
+    "speed": {
+      "walk": "30 ft."
+    },
+    "strength": 8,
+    "dexterity": 14,
+    "constitution": 10,
+    "intelligence": 10,
+    "wisdom": 8,
+    "charisma": 8,
+    "proficiencies": [
+      {
+        "value": 6,
+        "proficiency": {
+          "index": "skill-stealth",
+          "name": "Skill: Stealth",
+          "url": "/api/2014/proficiencies/skill-stealth"
+        }
+      }
+    ],
+    "damage_vulnerabilities": [],
+    "damage_resistances": [],
+    "damage_immunities": [],
+    "condition_immunities": [],
+    "senses": {
+      "darkvision": "60 ft.",
+      "passive_perception": 9
+    },
+    "languages": "Common, Goblin",
+    "challenge_rating": 0.25,
+    "proficiency_bonus": 2,
+    "xp": 50,
+    "special_abilities": [
+      {
+        "name": "Nimble Escape",
+        "desc": "The goblin can take the Disengage or Hide action as a bonus action on each of its turns."
+      }
+    ],
+    "actions": [
+      {
+        "name": "Scimitar",
+        "desc": "Melee Weapon Attack: +4 to hit, reach 5 ft., one target. Hit: 5 (1d6 + 2) slashing damage.",
+        "attack_bonus": 4,
+        "damage": [
+          {
+            "damage_type": {
+              "index": "slashing",
+              "name": "Slashing",
+              "url": "/api/2014/damage-types/slashing"
+            },
+            "damage_dice": "1d6+2"
+          }
+        ]
+      },
+      {
+        "name": "Shortbow",
+        "desc": "Ranged Weapon Attack: +4 to hit, range 80/320 ft., one target. Hit: 5 (1d6 + 2) piercing damage.",
+        "attack_bonus": 4,
+        "damage": [
+          {
+            "damage_type": {
+              "index": "piercing",
+              "name": "Piercing",
+              "url": "/api/2014/damage-types/piercing"
+            },
+            "damage_dice": "1d6+2"
+          }
+        ]
+      }
+    ],
+    "image": "/api/images/monsters/goblin.png",
+    "url": "/api/2014/monsters/goblin"
+  },
+  {
+    "index": "skeleton",
+    "name": "Skeleton",
+    "size": "Medium",
+    "type": "undead",
+    "alignment": "lawful evil",
+    "armor_class": [
+      {
+        "type": "armor",
+        "value": 13,
+        "desc": "armor scraps"
+      }
+    ],
+    "hit_points": 13,
+    "hit_dice": "2d8",
+    "hit_points_roll": "2d8+4",
+    "speed": {
+      "walk": "30 ft."
+    },
+    "strength": 10,
+    "dexterity": 14,
+    "constitution": 15,
+    "intelligence": 6,
+    "wisdom": 8,
+    "charisma": 5,
+    "proficiencies": [],
+    "damage_vulnerabilities": [
+      "bludgeoning"
+    ],
+    "damage_resistances": [],
+    "damage_immunities": [
+      "poison"
+    ],
+    "condition_immunities": [
+      {
+        "index": "poisoned",
+        "name": "Poisoned",
+        "url": "/api/2014/conditions/poisoned"
+      },
+      {
+        "index": "exhaustion",
+        "name": "Exhaustion",
+        "url": "/api/2014/conditions/exhaustion"
+      }
+    ],
+    "senses": {
+      "darkvision": "60 ft.",
+      "passive_perception": 9
+    },
+    "languages": "understands all languages it spoke in life but can't speak",
+    "challenge_rating": 0.25,
+    "proficiency_bonus": 2,
+    "xp": 50,
+    "actions": [
+      {
+        "name": "Shortsword",
+        "desc": "Melee Weapon Attack: +4 to hit, reach 5 ft., one target. Hit: 5 (1d6 + 2) piercing damage.",
+        "attack_bonus": 4,
+        "damage": [
+          {
+            "damage_type": {
+              "index": "piercing",
+              "name": "Piercing",
+              "url": "/api/2014/damage-types/piercing"
+            },
+            "damage_dice": "1d6+2"
+          }
+        ]
+      },
+      {
+        "name": "Shortbow",
+        "desc": "Ranged Weapon Attack: +4 to hit, range 80/320 ft., one target. Hit: 5 (1d6 + 2) piercing damage.",
+        "attack_bonus": 4,
+        "damage": [
+          {
+            "damage_type": {
+              "index": "piercing",
+              "name": "Piercing",
+              "url": "/api/2014/damage-types/piercing"
+            },
+            "damage_dice": "1d6+2"
+          }
+        ]
+      }
+    ],
+    "image": "/api/images/monsters/skeleton.png",
+    "url": "/api/2014/monsters/skeleton"
+  },
+  {
+    "index": "wolf",
+    "name": "Wolf",
+    "size": "Medium",
+    "type": "beast",
+    "alignment": "unaligned",
+    "armor_class": [
+      {
+        "type": "natural",
+        "value": 13
+      }
+    ],
+    "hit_points": 11,
+    "hit_dice": "2d8",
+    "hit_points_roll": "2d8+2",
+    "speed": {
+      "walk": "40 ft."
+    },
+    "strength": 12,
+    "dexterity": 15,
+    "constitution": 12,
+    "intelligence": 3,
+    "wisdom": 12,
+    "charisma": 6,
+    "proficiencies": [
+      {
+        "value": 3,
+        "proficiency": {
+          "index": "skill-perception",
+          "name": "Skill: Perception",
+          "url": "/api/2014/proficiencies/skill-perception"
+        }
+      },
+      {
+        "value": 4,
+        "proficiency": {
+          "index": "skill-stealth",
+          "name": "Skill: Stealth",
+          "url": "/api/2014/proficiencies/skill-stealth"
+        }
+      }
+    ],
+    "damage_vulnerabilities": [],
+    "damage_resistances": [],
+    "damage_immunities": [],
+    "condition_immunities": [],
+    "senses": {
+      "passive_perception": 13
+    },
+    "languages": "",
+    "challenge_rating": 0.25,
+    "proficiency_bonus": 2,
+    "xp": 50,
+    "special_abilities": [
+      {
+        "name": "Keen Hearing and Smell",
+        "desc": "The wolf has advantage on Wisdom (Perception) checks that rely on hearing or smell."
+      },
+      {
+        "name": "Pack Tactics",
+        "desc": "The wolf has advantage on an attack roll against a creature if at least one of the wolf's allies is within 5 ft. of the creature and the ally isn't incapacitated."
+      }
+    ],
+    "actions": [
+      {
+        "name": "Bite",
+        "desc": "Melee Weapon Attack: +4 to hit, reach 5 ft., one target. Hit: 7 (2d4 + 2) piercing damage. If the target is a creature, it must succeed on a DC 11 Strength saving throw or be knocked prone.",
+        "attack_bonus": 4,
+        "damage": [
+          {
+            "damage_type": {
+              "index": "piercing",
+              "name": "Piercing",
+              "url": "/api/2014/damage-types/piercing"
+            },
+            "damage_dice": "2d4+2"
+          }
+        ]
+      }
+    ],
+    "image": "/api/images/monsters/wolf.png",
+    "url": "/api/2014/monsters/wolf"
+  }
+]

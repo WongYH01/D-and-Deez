@@ -167,5 +167,5 @@ cython_debug/
 .idea/
 
 # Pi Dungeon Master runtime folders
-data/
-backups/
+/data/
+/backups/
