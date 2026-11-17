@@ -1,5 +1,5 @@
 # D-and-Deez
-Computah, generate me a D&amp;D that doesn't use all my credits
+Computah, generate me a D&amp;D that doesn't use all my credits & turn my pi into smth that's not a smart mirror
 
 ## Build, run and test
 

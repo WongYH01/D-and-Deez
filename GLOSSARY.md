@@ -55,8 +55,12 @@ A fight, from start to end, with its Combatants.
 _Avoid_: Combat, battle
 
 **Combatant**:
-A participant in an Encounter other than the Character, built from a monster stat block.
+A participant in an Encounter other than the Character, built from a Stat block.
 _Avoid_: Enemy, mob, NPC (an NPC is a story figure, not necessarily a fighter)
+
+**Stat block**:
+The SRD record of a monster's numbers and actions that a Combatant is built from.
+_Avoid_: Monster data, fixture
 
 **Combat round**:
 One pass through initiative order in which every Combatant and the Character act once.
@@ -73,6 +77,10 @@ _Avoid_: Dice result
 **Ruleset**:
 The single SRD version a Campaign follows: SRD 5.1 or SRD 5.2.
 _Avoid_: Edition, rules version
+
+**Rule section**:
+One headed piece of SRD rules prose, such as Grappling, given to Claude when the player's action names its rule or when Claude looks it up.
+_Avoid_: Chunk, rule
 
 ## Story
 
