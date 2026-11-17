@@ -18,6 +18,7 @@ from pidm.dice import Dice
 from pidm.engine import load_state
 from pidm.models import RollRecord, Turn
 from pidm.prompts import system_prompt, user_message
+from pidm.rules import retrieve
 from pidm.tools import dispatch, snapshot, tool_definitions
 
 Emit = Callable[[str, dict], None]
@@ -82,7 +83,7 @@ class TurnOrchestrator:
             system = system_prompt(state.campaign)
             tools = tool_definitions()
             messages = self._history(db, session_id) + [
-                {"role": "user", "content": user_message(snapshot(state), player_text)}]
+                {"role": "user", "content": user_message(snapshot(state), player_text, retrieve(db, player_text))}]
             narration = None
             for _ in range(self.round_cap):
                 reply = self.client.send(system=system, messages=messages, tools=tools, tools_enabled=True, on_text=None)

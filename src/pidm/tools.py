@@ -6,9 +6,12 @@ arguments before it rolls or changes state.
 
 from __future__ import annotations
 
+import difflib
 from typing import Any, Callable
 
-from pidm import srd
+from sqlalchemy import select
+
+from pidm import rules, srd
 from pidm.dice import DiceError, Roll, parse
 from pidm.engine import (
     GameState, ToolError, add_condition, armor_class, can_act, change_exhaustion, character_check_modes,
@@ -17,7 +20,7 @@ from pidm.engine import (
     passive_perception, prof, prone_rider, resolve_dying, ready_to_flee, remove_condition, resist_character, save_bonus,
     set_flag,
 )
-from pidm.models import Combatant, Encounter, InventoryItem, Quest
+from pidm.models import Combatant, Encounter, InventoryItem, Quest, SrdItem, SrdMonster, SrdSpell
 
 CHARACTER = "character"
 
@@ -180,6 +183,22 @@ def _advance(state: GameState, enc: Encounter) -> dict | None:
 
 # --- monster turns (R4) --------------------------------------------------------
 
+def _damage(action: dict) -> list[dict]:
+    """The action's damage entries; a choice of damage uses its first option (R16)."""
+    return [d["from"]["options"][0] if "from" in d else d for d in action.get("damage", [])]
+
+
+def _count(count) -> int:
+    """Attacks a Multiattack part makes (R16)."""
+    # shortcut: a non-numeric Multiattack count ("Number of Heads", "1d4") plays as one attack; model it if a playtest needs it.
+    return int(count) if str(count).isdigit() else 1
+
+
+def _resolvable(action: dict) -> bool:
+    """An attack the engine can roll: attack bonus and damage (R4, R16)."""
+    return "attack_bonus" in action and bool(action.get("damage"))
+
+
 def _monster_attacks(data: dict) -> list[dict]:
     """Multiattack if the stat block has one (first option), else its best single attack (R4)."""
     actions = {a["name"]: a for a in data.get("actions", [])}
@@ -187,22 +206,22 @@ def _monster_attacks(data: dict) -> list[dict]:
     plan: list[tuple[str, int]] = []
     if multi:
         if multi.get("actions"):
-            plan = [(a["action_name"], int(a["count"])) for a in multi["actions"]]
+            plan = [(a["action_name"], _count(a["count"])) for a in multi["actions"]]
         elif multi.get("action_options"):
             opt = multi["action_options"]["from"]["options"][0]
             items = opt["items"] if opt["option_type"] == "multiple" else [opt]
-            plan = [(a["action_name"], int(a["count"])) for a in items]
+            plan = [(a["action_name"], _count(a["count"])) for a in items]
     out = []
     for name, count in plan:
-        if name in actions and "attack_bonus" in actions[name]:
+        if name in actions and _resolvable(actions[name]):
             out += [actions[name]] * count
     if out:
         return out
-    attacks = [a for a in data.get("actions", []) if "attack_bonus" in a and a.get("damage")]
+    attacks = [a for a in data.get("actions", []) if _resolvable(a)]
 
     def avg(a):
         total = 0
-        for d in a["damage"]:
+        for d in _damage(a):
             for sign, n, sides in parse(d["damage_dice"]):
                 total += sign * (n * (sides + 1) / 2 if sides else n)
         return total
@@ -269,7 +288,7 @@ def _monster_attack(state: GameState, c: Combatant, action: dict, econ: dict) ->
     if not hit:
         return out
     total = 0
-    for d in action["damage"]:
+    for d in _damage(action):
         dtype = d["damage_type"]["index"]
         rolled, amount = state.dice.evaluate(d["damage_dice"], double_dice=crit)  # §4.20 on a crit
         amount = max(0, amount)
@@ -814,7 +833,9 @@ def t_start_encounter(state: GameState, monsters: list, surprise: str = "none") 
         count = int(m.get("count", 1))
         if not 1 <= count <= 10:
             raise ToolError("count must be between 1 and 10.")
-        state.monster(ref)  # raises for an unknown monster
+        data = state.monster(ref)  # raises for an unknown monster
+        if not any(_resolvable(a) for a in data.get("actions", [])):  # R16
+            raise ToolError(f"{data['name']} has no attack action the engine can resolve; pick another monster.")
         groups.append((ref, count))
     enc = Encounter(status="active", round=1, state={})
     state.session.encounters.append(enc)
@@ -1023,6 +1044,36 @@ def t_update_quest(state: GameState, quest_id: int | None = None, title: str | N
     return {"title": q.title, "status": q.status, "notes": q.notes}
 
 
+# --- SRD lookups -----------------------------------------------------------------
+
+_SRD_KINDS = {"monster": SrdMonster, "spell": SrdSpell, "item": SrdItem}
+_DROPPED = {"url", "image", "updated_at"}
+
+
+def _strip(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {k: _strip(v) for k, v in value.items() if k not in _DROPPED}
+    if isinstance(value, list):
+        return [_strip(v) for v in value]
+    return value
+
+
+def t_lookup_srd(state: GameState, kind: str, slug: str) -> dict:
+    model = _SRD_KINDS[kind]
+    key = "-".join(slug.strip().lower().replace("_", " ").split())
+    row = state.db.get(model, key)
+    if row is not None:
+        return _strip(row.data)
+    names = dict(state.db.execute(select(model.slug, model.name)).all())
+    similar = [s for s in names if key in s]
+    similar += [s for s in difflib.get_close_matches(key, list(names), n=5, cutoff=0.5) if s not in similar]
+    raise ToolError(f"No SRD {kind} {key!r}. Similar: {', '.join(similar[:5]) or 'none'}.")
+
+
+def t_lookup_rule(state: GameState, query: str) -> dict:
+    return {"sections": rules.lookup(state.db, query)}
+
+
 # --- snapshot ------------------------------------------------------------------------
 
 def snapshot(state: GameState) -> dict:
@@ -1114,7 +1165,7 @@ TOOLS: dict[str, tuple[Callable[..., dict], str, dict]] = {
     "hide": (t_hide, "The Character takes the Hide action (a bonus action for a Rogue with Cunning Action): Stealth against the Combatants' best passive Perception. A hidden Character's next attack has advantage.",
              _schema({}, [])),
     "dodge": (t_dodge, "The Character takes the Dodge action: attacks against it have disadvantage until its next turn.", _schema({}, [])),
-    "start_encounter": (t_start_encounter, "Start a fight. monsters is a list of {monster, count}; monster is an SRD slug (goblin, wolf, skeleton, bandit, bandit-captain). surprise: none, character or monsters (from a prior Stealth contest).",
+    "start_encounter": (t_start_encounter, "Start a fight. monsters is a list of {monster, count}; monster is any SRD monster slug (e.g. goblin, wolf, bandit-captain). surprise: none, character or monsters (from a prior Stealth contest).",
                         _schema({"monsters": {"type": "array", "items": _schema({"monster": _S, "count": _I}, ["monster"])},
                                  "surprise": {"type": "string", "enum": ["none", "character", "monsters"]}}, ["monsters"])),
     "resolve_npc_turns": (t_resolve_npc_turns, "End the Character's turn and play every Combatant's turn in initiative order until it is the Character's turn again (rolls the Character's death save when due). Call once at the end of each Character turn in combat.",
@@ -1130,6 +1181,10 @@ TOOLS: dict[str, tuple[Callable[..., dict], str, dict]] = {
                  _schema({"amount": _I, "reason": _S}, ["amount", "reason"])),
     "update_quest": (t_update_quest, "Create a quest (no quest_id; title required) or update one by id: status (active, completed, failed) and/or a note.",
                      _schema({"quest_id": _I, "title": _S, "status": {"type": "string", "enum": ["active", "completed", "failed"]}, "note": _S}, [])),
+    "lookup_rule": (t_lookup_rule, "Search the SRD rules prose. Returns the top three matching Rule sections in full, each with its heading path. Changes nothing.",
+                    _schema({"query": {**_S, "description": "e.g. 'grapple' or 'falling damage'"}}, ["query"])),
+    "lookup_srd": (t_lookup_srd, "Look up an SRD monster, spell or item record by slug (e.g. 'bandit-captain', 'cure-wounds', 'longsword'). Changes nothing.",
+                   _schema({"kind": {"type": "string", "enum": ["monster", "spell", "item"]}, "slug": _S}, ["kind", "slug"])),
 }
 
 

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import random as _random
+
 import pytest
 
 from pidm.db import open_db
@@ -11,7 +13,10 @@ from pidm.tools import dispatch
 
 
 class Game:
-    """Seam 1: call tools by name against a state tree on a temporary SQLite file, with scripted dice."""
+    """Seam 1: call tools by name against a state tree on a temporary SQLite file, with scripted dice.
+
+    Each Game holds one pooled connection until teardown; a test that makes many Games calls close() on each.
+    """
 
     def __init__(self, factory, template: str):
         self.factory = factory
@@ -36,6 +41,15 @@ class Game:
     def script(self, *values: int) -> "Game":
         self.values.extend(values)
         return self
+
+    def random(self, seed: int) -> "Game":
+        """Seeded random dice in place of scripted ones, for sweeps where exact rolls don't matter."""
+        rnd = _random.Random(seed)
+        self.dice.rng = lambda sides: rnd.randint(1, sides)
+        return self
+
+    def close(self) -> None:
+        self.db.close()
 
     def call(self, tool: str, /, **args):
         before = len(self.dice.rolls)

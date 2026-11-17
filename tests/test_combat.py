@@ -2,7 +2,7 @@
 
 Template numbers (from pidm.templates): Fighter Bram Str 16, Dex 14, AC 19, HP 12, longsword +5 / 1d8+3.
 Rogue Pip Dex 17, AC 14, HP 10, shortsword +5 / 1d6+3. Barbarian Grusk Str 17, Con 15, AC 13, HP 14,
-greataxe +5 / 1d12+3. Monster stat blocks are the 5e-database fixtures.
+greataxe +5 / 1d12+3. Monster Stat blocks are the imported SRD 5.1 records.
 """
 
 

@@ -2419,3 +2419,4 @@ The owner's decisions on D1–D10. Where a ruling departs from a quoted rule abo
 - **R13 (Dodge).** A `dodge()` tool: until the Character's next turn, attacks against it have disadvantage and its Dex saves have advantage; it ends if the Character is incapacitated.
 - **R14 (two-weapon fighting).** `attack` takes `offhand`: both weapons must be light, it costs the bonus action, and no positive ability modifier is added to damage.
 - **R15 (grapple and shove).** `contest` takes an optional `effect` (`grapple`, `shove_prone`, `escape`); on a win the engine sets or clears the condition.
+- **R16 (M2, imported Stat blocks).** A monster joins an Encounter only if it has an action with both an attack bonus and damage. Damage given as a choice uses its first option. A Multiattack part with no attack bonus or no damage is skipped, and a non-numeric count ("Number of Heads", "1d4") plays as one attack. Proposed during M2 (issue #5); awaiting the owner's confirmation.

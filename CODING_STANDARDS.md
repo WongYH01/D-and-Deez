@@ -4,7 +4,7 @@ Rules a reviewer applies to every diff. Each is a judgement call; cite the rule 
 
 ## Rules cite their source
 
-Every engine rule carries a comment naming what it implements: a section of `docs/rules/srd-5.1-mechanics.md` (`§4.26`) or a ruling (`R7`). The Rulings section at the end of that file overrides the quoted SRD text. A rule with no citation, or a citation that doesn't match the quoted text, is a finding.
+Every engine rule carries a comment naming what it implements: a section of `docs/rules/srd-5.1-mechanics.md` (`§4.26`) or a ruling (`R7`). The Rulings section at the end of that file overrides the quoted SRD text. A rule with no citation, or a citation that doesn't match the quoted text, is a finding. New engine behaviour that no section or ruling covers gets a new `Rn` entry in the Rulings section marked "Proposed (issue #N); awaiting owner confirmation", and the PR body lists it.
 
 ## Domain names follow the glossary
 

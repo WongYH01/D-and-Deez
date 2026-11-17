@@ -182,3 +182,18 @@ class SrdMonster(Base):
     slug: Mapped[str] = mapped_column(String(60), primary_key=True)
     name: Mapped[str] = mapped_column(String(100))
     data: Mapped[dict] = mapped_column(JSON)
+
+
+class SrdSpell(Base):
+    __tablename__ = "srd_spells"
+    slug: Mapped[str] = mapped_column(String(60), primary_key=True)
+    name: Mapped[str] = mapped_column(String(100))
+    data: Mapped[dict] = mapped_column(JSON)
+
+
+class SrdItem(Base):
+    """Equipment and magic items together; their slugs do not collide."""
+    __tablename__ = "srd_items"
+    slug: Mapped[str] = mapped_column(String(60), primary_key=True)
+    name: Mapped[str] = mapped_column(String(100))
+    data: Mapped[dict] = mapped_column(JSON)
