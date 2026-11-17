@@ -1,6 +1,6 @@
 # Pi Dungeon Master
 
-Single-player, text-based D&D 5e web app. Claude narrates; the app's code referees rules and plans the story. Design: `documentation/Pi Dungeon Master — Design Document.docx`.
+Single-player, text-based D&D 5e web app. Claude narrates; the app's code referees rules and plans the story. Design: `docs/Pi Dungeon Master — Design Document.md`.
 
 ## Agent skills
 
