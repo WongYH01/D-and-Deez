@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import random
 from importlib import resources
 
 
@@ -110,9 +109,7 @@ def test_every_srd_monster_plays_through_the_engine(make_game):
     monsters = json.loads(resources.files("pidm.data").joinpath("5e-SRD-Monsters.json").read_text(encoding="utf-8"))
     refused = set()
     for i, m in enumerate(monsters):
-        g = make_game(("fighter", "rogue", "barbarian")[i % 3])
-        rnd = random.Random(i)
-        g.dice.rng = lambda sides: rnd.randint(1, sides)
+        g = make_game(("fighter", "rogue", "barbarian")[i % 3]).random(i)
         if "error" in g.call("start_encounter", monsters=[{"monster": m["index"]}]):
             refused.add(m["index"])
         else:
@@ -122,5 +119,5 @@ def test_every_srd_monster_plays_through_the_engine(make_game):
                 g.call("contest", a="character", b=name, effect="grapple")
                 g.call("attack", target=name, weapon="unarmed")
             g.call("end_encounter")
-        g.db.close()  # one pooled connection per Game; release it before the next
+        g.close()
     assert refused == {"frog", "rug-of-smothering", "sea-horse", "shrieker", "vampire-mist"}
