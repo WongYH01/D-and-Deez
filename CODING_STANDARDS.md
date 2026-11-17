@@ -6,6 +6,8 @@ Rules a reviewer applies to every diff. Each is a judgement call; cite the rule 
 
 Every engine rule carries a comment naming what it implements: a section of `docs/rules/srd-5.1-mechanics.md` (`§4.26`) or a ruling (`R7`). The Rulings section at the end of that file overrides the quoted SRD text. A rule with no citation, or a citation that doesn't match the quoted text, is a finding. New engine behaviour that no section or ruling covers gets a new `Rn` entry in the Rulings section marked "Proposed (issue #N); awaiting owner confirmation", and the PR body lists it.
 
+Story-director behaviour (bible checks, story tools, the Director block, Endings) cites the design document's Story design section instead (`Story design §6`). Behaviour that differs from the originating issue or that section is a finding unless the same change updates the design document and the PR body lists the difference.
+
 ## Domain names follow the glossary
 
 Names in code, tool schemas, prompts and error messages use the terms in `GLOSSARY.md` (Turn, Tool round, Character, Combatant, Combat round, Combatant's turn, Roll). The one exception is the tool name `resolve_npc_turns`, fixed by the design document.

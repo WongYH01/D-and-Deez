@@ -154,9 +154,9 @@ Breakpoint 2 means rounds 2 to 4 of the same turn reread everything up to the ac
 | `tick_clock(clock, segments, reason)` | Fills a Clock by 1 to 3 segments; a full Clock ignores further ticks and returns its consequence |
 | `reveal_clue(clue)` | Marks any unrevealed Clue of the current Act found and returns its text; the first Clue of a Secret marks the Secret learned |
 | `end_campaign(ending)` | Accepted only when an ending condition holds (see Story design) |
+| `lookup_rule(query)` / `lookup_srd(kind, slug)` | Full-text rule search; a monster, spell or item record |
 
 Story tools take the bible's slugs (`act1.beat2`, `clue.ledger.1`, `clock.ritual`, `loc.mill`); an unknown slug returns an error listing the valid ones.
-| `lookup_rule(query)` / `lookup_srd(kind, slug)` | Full-text rule search; a monster, spell or item record |
 
 v2 adds `cast_spell`, `add_fact` / `retire_fact`, `write_note` (which also records rulings) and `end_scene`. The engine validates every argument against the turn's in-memory state tree; an invalid call returns an error message to Claude rather than changing anything, so Claude can correct itself within the turn.
 
@@ -200,7 +200,7 @@ The SRD's mechanics are fantasy: swords, armour and monsters. A cyberpunk or sci
 
 ### 2. The campaign bible
 
-One Claude call turns the setup into a campaign bible, returned as a forced tool call whose input schema comes from the bible's Pydantic models, so generated and hand-written bibles pass through the same schema. Code then checks what a schema cannot: 2 to 4 beats per act, at least three clues per secret spread over at least two locations, exactly one main clock, a victory and a defeat ending, every slug reference resolving, and an act count that matches the length (1 for a one-shot, 3 for a short campaign). A bible that fails is regenerated with the errors fed back, up to three attempts in all; then setup fails. Every item carries a slug, each secret belongs to an act, and a beat may list the beats or secrets it `requires`. It contains:
+One Claude call turns the setup into a campaign bible, returned as a forced tool call whose input schema comes from the bible's Pydantic models, so generated and hand-written bibles pass through the same schema. Code then checks what a schema cannot: 2 to 4 beats per act, at least three clues per secret spread over at least two locations, exactly one main clock, a victory and a defeat ending, every slug reference resolving, and an act count that matches the length (1 for a one-shot, 3 for a short campaign). A bible that fails is regenerated with the errors fed back, up to three attempts in all; then setup fails. Every item carries a slug, each secret belongs to an act, and a beat may list in `requires` beats listed before it, or secrets of its own or an earlier act, so `requires` can never deadlock an act. It contains:
 
 - **Premise and central question:** what the story is about and what the player must decide or stop.
 - **Antagonist:** their goal, their plan, and what happens if no one interferes.
@@ -239,10 +239,10 @@ Deferred to v2. In v1 the bible stays fixed for the whole campaign: three clues 
 | --- | --- |
 | Victory | The final beat is resolved before the main clock fills |
 | Defeat | The main clock fills before the final beat is resolved |
-| Fallen hero | The character dies after three failed death saves |
+| Fallen hero | The character is dead, whether from three failed death saves, massive damage or exhaustion |
 | Retired | The player ends the campaign from the UI |
 
-When the main clock fills or the final beat resolves, the director block tells Claude the condition is met and to call `end_campaign`. If Claude does not call it in the turn the main clock fills, the orchestrator records Defeat anyway, so play cannot continue past a full main clock. Retiring needs no Claude call: the player confirms and the engine records it, with no epilogue.
+When the main clock fills or the final beat resolves, the director block tells Claude the condition is met and to call `end_campaign`. If Claude does not call it in the turn the main clock fills, the orchestrator records Defeat anyway, so play cannot continue past a full main clock. Retiring needs no Claude call: the player confirms and the engine records it, with no epilogue. Victory and Defeat never hold together: once the main clock is full `advance_beat` is refused, and once the final beat is resolved the main clock can no longer be ticked.
 
 For the other endings Claude's final narration is the epilogue (a narrow victory, with the clock nearly full or a secret still hidden, can be told as bittersweet), and the campaign is marked complete. Carrying the character into a new campaign comes with the setup wizard, not M3.
 

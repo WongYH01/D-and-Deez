@@ -4,6 +4,8 @@ Single-player, text-based D&D 5e web app. Claude narrates; the app's code refere
 
 Tests run on the host in the repo's venv: `.venv/Scripts/pytest` (Windows) or `.venv/bin/pytest`. The Docker image has no test dependencies.
 
+Tool registry: the `TOOLS` dict at the end of `src/pidm/tools.py`; story tools live in `src/pidm/story.py`. Test seams and `FakeClaude`: `tests/conftest.py` (seams listed in `CODING_STANDARDS.md`).
+
 ## Agent skills
 
 ### Issue tracker
