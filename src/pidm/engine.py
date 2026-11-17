@@ -40,9 +40,11 @@ class GameState:
 
     @property
     def encounter(self) -> Encounter | None:
-        for enc in self.session.encounters:
-            if enc.status == "active":
-                return enc
+        # An Encounter belongs to the Campaign: a fight carries over when its Session closes.
+        for sess in self.campaign.sessions:
+            for enc in sess.encounters:
+                if enc.status == "active":
+                    return enc
         return None
 
     def monster(self, ref: str) -> dict:

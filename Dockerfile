@@ -20,4 +20,4 @@ RUN useradd --uid 1000 --create-home app
 USER app
 
 EXPOSE 8000
-CMD ["uvicorn", "pidm.app:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "pidm.app:from_env", "--factory", "--host", "0.0.0.0", "--port", "8000"]

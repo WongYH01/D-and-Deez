@@ -445,3 +445,24 @@ def test_reckless_not_allowed_after_a_grapple(make_game):
     fight(g, "bandit-captain")
     g.script(15, 2).ok("contest", a="character", b="Bandit Captain 1", effect="grapple")
     assert "first attack" in g.call("attack", target="Bandit Captain 1", weapon="greataxe", reckless=True)["error"]
+
+
+# --- Encounters belong to the Campaign (M4) ----------------------------------------
+
+def test_an_encounter_started_in_one_session_continues_in_the_next(make_game):
+    # A fight carries over when a Session closes (design: Data model, "One open session").
+    from datetime import datetime, timezone
+    from pidm.models import Session
+
+    g = make_game("fighter")
+    fight(g, "goblin", char_init=1, monster_inits=[20])  # Goblin 1 (22) acts before Bram (3)
+    g.state.session.ended_at = datetime.now(timezone.utc)
+    nxt = Session(campaign=g.state.campaign)
+    g.db.add(nxt)
+    g.db.commit()
+    g.session_id = nxt.id
+    g.commit()
+    assert g.state.session.id == nxt.id and g.state.encounter is not None
+    g.script(2)  # the goblin's scimitar: 2+4 = 6 misses AC 19
+    r = g.ok("resolve_npc_turns")
+    assert r["turns"][0]["attacks"][0]["hit"] is False and r["character_turn"] == {"turn": "character"}

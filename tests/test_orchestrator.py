@@ -27,6 +27,15 @@ def world(factory):
     return make
 
 
+def final_user_message(claude, request=0):
+    content = claude.requests[request]["messages"][-1]["content"]
+    return content if isinstance(content, str) else "".join(b.get("text", "") for b in content)
+
+
+def system_text(request):
+    return "".join(b["text"] for b in request["system"])
+
+
 def character(factory, session_id):
     db = factory()
     return load_state(db, session_id, None).character
@@ -44,7 +53,7 @@ def test_tool_round_then_narration_commits_turn_rolls_and_state(factory, world):
     ev = Events()
     orch = TurnOrchestrator(factory, claude, rng=scripted_rng([4]))
     turn = orch.run_turn(sid, "I kick the brazier", ev)
-    assert ev.kinds() == ["roll", "narration_delta", "turn_done"]
+    assert ev.kinds() == ["roll", "narration_delta", "state_changed", "turn_done"]
     assert ev[0][1]["total"] == 4 and ev[1][1]["text"] == "Flames lick your boots."
     assert turn.status == "committed" and turn.seq == 0
     assert (turn.tokens_in, turn.tokens_out, turn.tokens_cached) == (200, 40, 120)
@@ -53,7 +62,7 @@ def test_tool_round_then_narration_commits_turn_rolls_and_state(factory, world):
         rolls = db.scalars(select(RollRecord)).all()
         assert [(r.purpose, r.total) for r in rolls] == [("Bram takes fire damage", 4)]
     # The request carried the state snapshot and the player's action in the final user message.
-    first = claude.requests[0]["messages"][-1]["content"]
+    first = final_user_message(claude)
     assert '"hp":12' in first and first.endswith("Player action: I kick the brazier")
 
 
@@ -84,7 +93,7 @@ def test_tool_round_cap_forces_a_narration_only_call(factory, world):
     turn = TurnOrchestrator(factory, claude, round_cap=4, rng=scripted_rng([1, 2, 3, 4])).run_turn(sid, "x", ev)
     assert [r["tools_enabled"] for r in claude.requests] == [True, True, True, True, False]
     assert turn.narration == "Enough dice." and turn.status == "committed"
-    assert ev.kinds()[-2:] == ["narration_delta", "turn_done"]
+    assert ev.kinds()[-3:] == ["narration_delta", "state_changed", "turn_done"]
 
 
 def test_failed_turn_leaves_state_unchanged_and_saves_a_failed_row(factory, world):
@@ -178,8 +187,6 @@ def test_m1_exit_scene(factory, world):
     assert outcomes == ["success", "win", "loss", "miss", "miss", "miss", "hit", "hit", "miss", "success"]
 
 
-def final_user_message(claude, request=0):
-    return claude.requests[request]["messages"][-1]["content"]
 
 
 def test_an_action_naming_a_rule_carries_its_rule_sections(factory, world):
@@ -235,8 +242,8 @@ def test_the_director_block_and_the_bible_reach_claude_every_turn(factory, story
     orch = TurnOrchestrator(factory, claude)
     orch.run_turn(sid, "I look around", Events())
     orch.run_turn(sid, "I wait", Events())
-    system = claude.requests[0]["system"]
-    assert claude.requests[1]["system"] == system  # byte-identical across Turns (cache breakpoint 1)
+    system = system_text(claude.requests[0])
+    assert system_text(claude.requests[1]) == system  # byte-identical across Turns (cache breakpoint 1)
     assert "The Drowned Bell" in system and "secret.rope" in system and "Abbess Varn" in system
     assert "Lines (never show): harm to children" in system and "Veils (keep off-screen): torture" in system
     msg = final_user_message(claude)
@@ -280,7 +287,8 @@ def test_play_stops_at_defeat_even_when_claude_skips_end_campaign(factory, story
     orch.run_turn(sid, "I nap", Events())
     ev = Events()
     orch.run_turn(sid, "I nap again", ev)
-    assert ev[-1] == ("turn_done", {"turn_id": 2, "turn_seq": 1, "ending": "defeat"})
+    assert ev[-3:] == [("state_changed", {"turn_seq": 1}), ("turn_done", {"turn_seq": 1}),
+                       ("campaign_ended", {"campaign_id": 1, "ending": "defeat"})]
     camp = campaign(factory, sid)
     assert (camp.status, camp.ending) == ("complete", "defeat")
     with pytest.raises(CampaignEnded):
@@ -319,7 +327,7 @@ def test_m3_exit_one_shot_from_opening_hook_to_victory(factory, story_world):
     for action in ("I chase the figure", "I ask in the village", "I ask Hesta about Osric", "I enter the sluice",
                    "I climb the bell tower and cut the rope"):
         orch.run_turn(sid, action, ev)
-    assert "error" not in ev.kinds() and ev[-1][1]["ending"] == "victory"
+    assert "error" not in ev.kinds() and ev[-1] == ("campaign_ended", {"campaign_id": 1, "ending": "victory"})
     # advance_beat told Claude the Victory condition was met before it called end_campaign.
     assert "victory_condition_met" in str(claude.requests[-2]["messages"][-1]["content"])
     camp = campaign(factory, sid)
@@ -338,8 +346,9 @@ def test_m3_exit_an_idle_player_is_brought_a_clue_within_8_turns(factory, story_
         """Plays the idle Turns, and on a Stall reveals the Clue the nudge names."""
 
         def send(self, **kw):
-            msg = kw["messages"][-1]["content"]
-            if isinstance(msg, str) and "STALL" in msg:
+            content = kw["messages"][-1]["content"]
+            msg = content[0].get("text", "") if isinstance(content, list) else content
+            if "STALL" in msg:
                 slug = msg.split("Bring Clue ")[1].split(" ")[0]
                 self.script = [tool("reveal_clue", clue=slug), text("A messenger staggers in with a map.")]
             elif not self.script:
@@ -352,3 +361,116 @@ def test_m3_exit_an_idle_player_is_brought_a_clue_within_8_turns(factory, story_
         orch.run_turn(sid, "I wait", Events())
     revealed = [c for s in campaign(factory, sid).secrets for c in s.clues if c.revealed_turn is not None]
     assert [(c.slug, c.revealed_turn) for c in revealed] == [("clue.sluice.1", 8)]
+
+
+# --- M4: Sessions, Recaps, caching and the token budget --------------------------------------
+
+def next_session(factory, session_id, rolling="", final="", current_rolling=""):
+    """Close a Session with the given Recaps and open the Campaign's next one."""
+    from datetime import datetime, timezone
+    with factory() as db:
+        old = db.get(Session, session_id)
+        old.ended_at, old.rolling_recap, old.final_recap = datetime.now(timezone.utc), rolling, final
+        new = Session(campaign_id=old.campaign_id, rolling_recap=current_rolling)
+        db.add(new)
+        db.commit()
+        return new.id
+
+
+def recap_of(msg):
+    return msg[msg.index("<recap>"):msg.index("</recap>")]
+
+
+def test_cache_breakpoints_sit_on_the_last_system_block_and_the_final_user_message(factory, story_world):
+    sid = story_world()
+    claude = FakeClaude(tool("roll", expr="1d4", purpose="luck"), text("The die settles."))
+    TurnOrchestrator(factory, claude, rng=scripted_rng([2])).run_turn(sid, "I roll", Events())
+    for req in claude.requests:
+        assert req["system"][-1]["cache_control"] == {"type": "ephemeral"}
+        assert all("cache_control" not in b for b in req["system"][:-1])
+    first, second = claude.requests[0]["messages"], claude.requests[1]["messages"]
+    assert first[-1]["content"][-1]["cache_control"] == {"type": "ephemeral"}
+    # The Tool round rereads the marked message from the cache; nothing after it carries a marker.
+    assert second[len(first) - 1] == first[-1]
+    assert "cache_control" not in str(second[len(first):])
+
+
+def test_turn_seq_and_history_continue_across_sessions(factory, world):
+    sid = world()
+    orch = TurnOrchestrator(factory, FakeClaude(text("One."), text("Two."), text("Three.")))
+    orch.run_turn(sid, "a", Events())
+    orch.run_turn(sid, "b", Events())
+    sid2 = next_session(factory, sid)
+    turn = orch.run_turn(sid2, "c", Events())
+    assert (turn.seq, turn.session_id) == (2, sid2)
+    msgs = orch.client.requests[2]["messages"]
+    assert [(m["role"], m["content"]) for m in msgs[:-1]] == [
+        ("user", "a"), ("assistant", "One."), ("user", "b"), ("assistant", "Two.")]
+
+
+def test_the_recap_block_carries_the_previous_final_recap_and_this_sessions_rolling_recap(factory, story_world):
+    sid = story_world()
+    sid2 = next_session(factory, sid, rolling="You waded the reeds.", final="You found the mill.",
+                        current_rolling="Tonight you met Hesta.")
+    claude = FakeClaude(text("Fog."))
+    TurnOrchestrator(factory, claude).run_turn(sid2, "I look around", Events())
+    msg = final_user_message(claude)
+    recap = recap_of(msg)
+    assert "You found the mill." in recap and "Tonight you met Hesta." in recap
+    assert "You waded the reeds." not in recap
+    assert msg.index("</director>") < msg.index("<recap>") < msg.index("Player action: I look around")
+
+
+def test_a_missing_final_recap_falls_back_to_the_previous_rolling_recap(factory, story_world):
+    sid = story_world()
+    sid2 = next_session(factory, sid, rolling="You waded the reeds.", final="")
+    claude = FakeClaude(text("Fog."))
+    TurnOrchestrator(factory, claude).run_turn(sid2, "I look around", Events())
+    assert "You waded the reeds." in recap_of(final_user_message(claude))
+
+
+def test_the_first_session_has_no_recap_block(factory, story_world):
+    claude = FakeClaude(text("Fog."))
+    TurnOrchestrator(factory, claude).run_turn(story_world(), "I look around", Events())
+    assert "<recap>" not in final_user_message(claude)
+
+
+def test_a_later_session_opens_with_a_resume_turn(factory, story_world):
+    sid = story_world()
+    orch = TurnOrchestrator(factory, FakeClaude(text("Fog on the Reed Shore."), text("Previously... What do you do?")))
+    orch.run_opening(sid, Events())
+    sid2 = next_session(factory, sid, final="You reached the shore.")
+    turn = orch.run_resume(sid2, Events())
+    assert (turn.seq, turn.status) == (1, "committed")
+    msg = final_user_message(orch.client, 1)
+    assert "You reached the shore." in recap_of(msg)
+    action = msg[msg.index("Player action:"):]
+    assert "previously" in action and "where the Character stands" in action and "question" in action
+
+
+def test_a_stall_begun_in_session_1_is_detected_in_session_2(factory, story_world):
+    sid = story_world()
+    claude = FakeClaude(*[text(f"Fog {i}.") for i in range(9)])
+    orch = TurnOrchestrator(factory, claude)
+    for i in range(5):
+        orch.run_turn(sid, f"I wait {i}", Events())     # seq 0 to 4
+    sid2 = next_session(factory, sid)
+    for i in range(4):
+        orch.run_turn(sid2, f"I wait {i}", Events())    # seq 5 to 8
+    assert ["STALL" in final_user_message(claude, i) for i in range(9)] == [False] * 8 + [True]
+
+
+def test_the_budget_drops_the_oldest_history_pairs_but_never_the_snapshot_director_or_recap(factory, story_world):
+    sid = story_world()
+    sid2 = next_session(factory, sid, final="You found the mill.")
+    big = "x" * 40000  # about 10,000 tokens at 4 characters per token
+    claude = FakeClaude(text(big), text(big), text(big), text("ok"))
+    orch = TurnOrchestrator(factory, claude, context_budget=15000)
+    for action in ("a", "b", "c", "d"):
+        orch.run_turn(sid2, action, Events())
+    msgs = claude.requests[3]["messages"]
+    assert [m["content"] for m in msgs[:-1]] == ["c", big]  # one pair fits next to the context; two do not
+    msg = final_user_message(claude, 3)
+    assert "<state>" in msg and "<director>" in msg and "You found the mill." in recap_of(msg)
+    # With the default budget of 8,000 tokens no such pair fits at all.
+    TurnOrchestrator(factory, FakeClaude(text("ok"))).run_turn(sid2, "e", Events())

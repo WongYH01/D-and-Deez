@@ -60,6 +60,8 @@ a rumour) and call reveal_clue.
 """
 
 OPENING = "(Begin the Campaign: narrate the bible's opening scene, starting mid-action and ending on a question.)"
+RESUME = ("(Resume the Campaign after a break: in a few sentences tell what happened previously, from the <recap> "
+          "block, say where the Character stands now, and end on a question.)")
 
 
 def system_prompt(campaign: Campaign) -> str:
@@ -71,11 +73,15 @@ def system_prompt(campaign: Campaign) -> str:
             f"{json.dumps(campaign.bible, indent=1, ensure_ascii=False)}\n")
 
 
-def user_message(snapshot: dict, player_text: str, rules: list[dict] | None = None, director: str | None = None) -> str:
-    """Dynamic context: the state snapshot, the Director block, any Rule sections the action names, then the action."""
+def user_message(snapshot: dict, player_text: str, rules: list[dict] | None = None, director: str | None = None,
+                 recap: str | None = None) -> str:
+    """Dynamic context: the state snapshot, the Director block, the recap block, any Rule sections the action names,
+    then the action."""
     out = f"<state>\n{json.dumps(snapshot, separators=(',', ':'))}\n</state>\n\n"
     if director:
         out += f"<director>\n{director}\n</director>\n\n"
+    if recap:
+        out += f"<recap>\n{recap}\n</recap>\n\n"
     if rules:
         sections = "\n".join(f"<rule><section>{r['section']}</section>\n{r['body']}\n</rule>" for r in rules)
         out += f"<rules>\n{sections}\n</rules>\n\n"

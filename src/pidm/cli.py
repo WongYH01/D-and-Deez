@@ -37,8 +37,8 @@ def emit(event: str, payload: dict) -> None:
         print(payload["text"], end="", flush=True)
     elif event == "turn_done":
         print("\n", flush=True)
-        if payload.get("ending"):
-            print(f"*** The Campaign has ended: {ENDINGS[payload['ending']]}. ***", flush=True)
+    elif event == "campaign_ended":
+        print(f"*** The Campaign has ended: {ENDINGS[payload['ending']]}. ***", flush=True)
     elif event == "error":
         print(f"\n! {payload['message']} ({payload['detail']})\n", flush=True)
 
@@ -51,12 +51,12 @@ def _ask(prompt: str) -> str | None:
         return None
 
 
-def _setup(factory, args) -> int | None:
-    """Start a Campaign and return its Session id, or None if the player accepts no premise."""
+def _setup(factory, args):
+    """Start a Campaign and return its Session, or None if the player accepts no premise."""
     setup = Setup(setting=args.setting, tone=args.tone, length=args.length, lines=args.lines, veils=args.veils,
                   hook=args.hook)
     if args.bible:
-        return start_campaign(factory, setup, args.template, args.name, bible=load_bible(args.bible)).id
+        return start_campaign(factory, setup, args.template, args.name, bible=load_bible(args.bible))
     client = plan_client()
     for attempt in range(1, ATTEMPTS + 1):
         print("Planning the Campaign...", flush=True)
@@ -66,7 +66,7 @@ def _setup(factory, args) -> int | None:
         if answer is None:
             return None
         if answer.lower() in ("", "y", "yes"):
-            return sess.id
+            return sess
         if attempt < ATTEMPTS:
             print("Planning another story.")
     print("No premise accepted.")
@@ -91,19 +91,21 @@ def main(argv: list[str] | None = None) -> int:
     os.makedirs(os.path.dirname(os.path.abspath(args.db)), exist_ok=True)
     factory = open_db(args.db)
     try:
-        session_id = _setup(factory, args)
+        sess = _setup(factory, args)
     except SetupError as e:
         print(f"Setup failed: {e}", file=sys.stderr)
         return 1
-    if session_id is None:
+    if sess is None:
         return 0
-    orch = TurnOrchestrator(factory, AnthropicClient(), round_cap=int(os.environ.get("PIDM_ROUND_CAP", "4")))
+    session_id = sess.id
+    orch = TurnOrchestrator(factory, AnthropicClient(), round_cap=int(os.environ.get("PIDM_ROUND_CAP", "4")),
+                            context_budget=int(os.environ.get("PIDM_CONTEXT_BUDGET", "8000")))
     print("Type your action and press Enter; 'retire' to end the Campaign, 'quit' to stop.\n")
     ended = []
 
     def play(event: str, payload: dict) -> None:
         emit(event, payload)
-        if event == "turn_done" and payload.get("ending"):
+        if event == "campaign_ended":
             ended.append(payload["ending"])
 
     try:
@@ -114,7 +116,7 @@ def main(argv: list[str] | None = None) -> int:
                 return 0
             if action.lower() == "retire":
                 if (_ask("Retire your Character and end this Campaign for good? [y/N] ") or "").lower() in ("y", "yes"):
-                    retire(factory, session_id)
+                    retire(factory, sess.campaign_id)
                     print("Your Character hangs up their sword. The Campaign has ended: Retired.")
                     return 0
                 continue
