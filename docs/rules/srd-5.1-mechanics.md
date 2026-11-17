@@ -2399,3 +2399,20 @@ The design's `start_encounter(monsters)` rolls initiative but doesn't mention su
 ### D10. Rounding
 
 SRD 5.1 has no general rounding rule (see Not in SRD 5.1). Halving comes up in resistance, Uncanny Dodge, exhaustion level 4, speed halving and long-rest Hit Dice recovery ("half of the character's total number of them (minimum of one die)", p. 87). Decide the engine's rounding direction. The SRD's stated directions for halving are mixed: "rounded down" on pp. 12, 20, 31, 58, 268, 337 and 339, but "rounded up" or "round up" on pp. 21, 25, 48, 53, 56 and 345. Of the two rules that split damage in half, one rounds down (cloaker, p. 268) and one rounds up (shield guardian, p. 345). The SRD makes neither direction a general rule.
+
+## Rulings (decided 2026-11-17)
+
+The owner's decisions on D1–D10. Where a ruling departs from a quoted rule above, the ruling wins in the engine.
+
+- **R1 (D1, within 5 feet).** Melee attacks count as within 5 feet; ranged attacks do not. This drives prone, paralyzed and unconscious. The "ranged attack in close combat" disadvantage is dropped.
+- **R2 (D1, movement).** Opportunity attacks, Disengage, Dash, reach and speed changes have no mechanical effect. Fleeing is narrated by Claude, followed by `end_encounter`. Speed 0 (grappled, restrained) is kept only as "cannot stand from prone".
+- **R3 (D1, cover).** `attack` takes an optional `cover` (`half` +2 AC, `three_quarters` +5 AC) for the Character's attacks. Monster attacks on the Character ignore cover in M1.
+- **R4 (D2, monsters).** Monsters use only attack actions and Multiattack. Reactions, Recharge, X/Day, legendary and lair actions are ignored. Initiative is rolled per Combatant. Monsters die at 0 HP. The Character's melee `attack` takes `nonlethal`; monsters never knock the Character out.
+- **R5 (D3, ammunition).** Tracked: each ranged attack spends one piece from inventory and fails with none; `end_encounter` recovers half, rounded down. Thrown weapons are recovered at `end_encounter`. Loading is enforced.
+- **R6 (D4, templates).** Fighter: Fighting Style Defense, +2 Str at level 4. Rogue: Expertise in Stealth and thieves' tools, +2 Dex at level 4. Barbarian: Berserker, +2 Str at level 4. No feats. XP past level 5 is stored; levels stop at 5. Frenzy is opt-in through `use_feature("rage", frenzy=true)`.
+- **R7 (D6, dying outside an Encounter).** One engine step: instant-death check, Relentless Endurance, then death saves until stable or dead. If stable, the Character stays unconscious, 1d4 hours are rolled, and HP becomes 1.
+- **R8 (D7, Sneak Attack).** The "another enemy within 5 feet" clause is dropped (no companions in v1). A `hide()` tool rolls Stealth against the highest passive Perception among conscious Combatants; success makes the Character hidden, the next attack has advantage, and attacking ends hidden. Hide costs the action, or the bonus action through Cunning Action.
+- **R9 (D8, choices).** Lucky and Great Weapon Fighting always reroll. Finesse uses the higher modifier. Temporary HP keeps the higher value. Initiative ties go to the Character. A grapple or shove defender uses its better skill. Reckless Attack is a flag on `attack`. Action Surge grants a full second Attack action, Extra Attack included. The Character has one reaction per Combat round; Uncanny Dodge is used on the first hit each round. No Inspiration in v1.
+- **R10 (D9, surprise).** `start_encounter` takes `surprise: none | character | monsters`, set by Claude from a prior Stealth check.
+- **R11 (D10, rounding).** Round down unless the specific rule says round up. This is a house ruling (the Player's Handbook convention), not SRD text.
+- **R12 (races).** Templates fix the race: Human Fighter, Lightfoot Halfling Rogue, Half-Orc Barbarian. Player-chosen races wait for the v2 character builder.

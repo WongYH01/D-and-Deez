@@ -138,12 +138,13 @@ Breakpoint 2 means rounds 2 to 4 of the same turn reread everything up to the ac
 | `skill_check(character, skill, dc)` | d20 + computed bonus against a DC |
 | `saving_throw(target, ability, dc)` | d20 + save bonus against a DC; applies the effect on failure when given |
 | `contest(a, skill_a, b, skill_b)` | Opposed check, for grapples, shoves, Stealth against Perception |
-| `attack(attacker, target, weapon)` | Roll to hit against AC, roll damage on a hit, apply it, return the result |
+| `attack(attacker, target, weapon, cover, reckless, nonlethal)` | Roll to hit against AC, roll damage on a hit, apply it, return the result; spends ammunition |
+| `hide()` | Stealth against the Combatants' best passive Perception; a hidden Character attacks with advantage |
 | `apply_damage` / `heal` | Changes HP within limits, applies resistances, starts death saves at 0 HP |
 | `set_condition(target, condition, on, duration)` | Adds or removes an SRD condition with an optional duration in rounds |
-| `start_encounter(monsters)` / `resolve_npc_turns()` / `end_encounter()` | Builds combatants from stat blocks and rolls initiative; plays every monster turn in initiative order with simple engine tactics, ticking durations and rolling the player's death save when due, and stops when it is the player's turn again; closes the fight |
+| `start_encounter(monsters, surprise)` / `resolve_npc_turns()` / `end_encounter()` | Builds combatants from stat blocks and rolls initiative; plays every monster turn in initiative order with simple engine tactics, ticking durations and rolling the player's death save when due, and stops when it is the player's turn again; closes the fight |
 | `use_feature(name)` | Uses a class feature such as Rage or Second Wind, tracking uses per rest; Sneak Attack is applied by `attack` when it qualifies |
-| `rest(kind)` | Short or long rest: hit dice, HP, condition and exhaustion recovery |
+| `rest(kind, hit_dice)` | Short or long rest: hit dice, HP, condition and exhaustion recovery |
 | `add_item` / `remove_item` / `adjust_gold` | Changes inventory and gold; rejects removing what the character lacks |
 | `grant_xp(amount, reason)` | Adds XP and levels up at the threshold |
 | `update_quest(id, status, note)` | Creates or updates a quest |
@@ -161,7 +162,7 @@ Rules come from the free D&D System Reference Document, loaded into the image's 
 
 **Source and licence.** Both SRD 5.1 (2014 rules) and SRD 5.2 (2024 rules) are released under CC-BY-4.0, which permits use with attribution. Each campaign stores one ruleset in `campaigns.ruleset`, never a mix. v1 defaults to SRD 5.1 because its structured datasets are more mature; moving to 5.2 is an open question. The UI shows the required attribution on an About page.
 
-**v1 rules coverage.** v1 supports non-spellcasting SRD classes (for example Fighter, Rogue and Barbarian) and characters start from a pre-made template (one per class), chosen at campaign setup. Monsters that cast spells use their stat-block attacks only. Characters advance to level 5 at most, with the subclass fixed by the template (Champion, Thief, Berserker) and average hit points per level. In an Encounter the engine enforces the Character's attacks and bonus action per Combatant's turn; Combatants are named uniquely ("Goblin 1") and tools accept only those names. The engine makes every roll; the player never enters dice. Spellcasting, spell slots and a full character builder (standard array and skill choices) arrive in v2.
+**v1 rules coverage.** v1 supports non-spellcasting SRD classes (for example Fighter, Rogue and Barbarian) and characters start from a pre-made template (one per class), chosen at campaign setup. Monsters that cast spells use their stat-block attacks only. Characters advance to level 5 at most, with race and subclass fixed by the template (Human Champion Fighter, Lightfoot Halfling Thief Rogue, Half-Orc Berserker Barbarian) and average hit points per level. In an Encounter the engine enforces the Character's attacks and bonus action per Combatant's turn; Combatants are named uniquely ("Goblin 1") and tools accept only those names. The engine makes every roll; the player never enters dice. Every departure from the SRD is a ruling listed in `docs/rules/srd-5.1-mechanics.md`. Spellcasting, spell slots and a full character builder (standard array and skill choices) arrive in v2.
 
 **Layer 1: mechanics in code.** Ability modifiers, proficiency, skill checks, saving throws, contests, attacks against AC, damage, healing, conditions and their durations, initiative and turn order, death saves, rests, XP and level-ups are Python functions reached only through the tools in LLM integration, so Claude cannot apply them wrongly.
 
