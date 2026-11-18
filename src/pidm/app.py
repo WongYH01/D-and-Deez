@@ -30,9 +30,10 @@ from pidm.campaign import Setup, build_campaign, clear_story, new_campaign, reti
 from pidm.claude import AnthropicClient, ClaudeClient, plan_client as make_plan_client, recap_client as make_recap_client
 from pidm.db import open_db
 from pidm.engine import hp_max, load_state, skill_list, speed
-from pidm.models import Campaign, Session, Turn
+from pidm.models import Campaign, Scene, Session, Turn
 from pidm.orchestrator import TurnOrchestrator, next_seq
 from pidm.prompts import OPENING, RESUME
+from pidm.scenes import write_scene_summary
 from pidm.recap import ROLLING_EVERY, write_final_recap, write_rolling_recap
 from pidm.templates import TEMPLATES
 from pidm.tools import snapshot
@@ -184,6 +185,9 @@ def create_app(factory: sessionmaker, *, turn_client: ClaudeClient, plan_client:
                               .where(Turn.session_id == session_id, Turn.status == "committed"))
             if count % ROLLING_EVERY == 0:
                 jobs.submit(write_rolling_recap, factory, recap_client, session_id, count)
+            for scene_id in db.scalars(select(Scene.id).where(Scene.session_id == session_id,
+                                                               Scene.end_turn == turn.seq)):
+                jobs.submit(write_scene_summary, factory, recap_client, scene_id)
             sess = db.get(Session, session_id)
             if sess.campaign.status == "complete" and sess.ended_at is None:
                 close_session(db, sess)  # an Ending closes the Session

@@ -20,6 +20,7 @@ from pidm.engine import load_state
 from pidm.models import Campaign, RollRecord, Session, Turn
 from pidm.prompts import OPENING, RESUME, system_prompt, user_message
 from pidm.recap import recap_block
+from pidm.scenes import end_overlong_scene
 from pidm.rules import retrieve
 from pidm.story import director_block, end, ending_met
 from pidm.tools import dispatch, snapshot, tool_definitions
@@ -198,6 +199,7 @@ class TurnOrchestrator:
                                          on_text=lambda t: emit("narration_delta", {"turn_seq": seq, "text": t}))
                 usage.add(reply.usage)
                 narration = text_of(reply)
+            end_overlong_scene(state)
             if ending_met(state) == "defeat":
                 end(state.campaign, "defeat")  # Claude skipped end_campaign on a full Main clock
             turn = Turn(session_id=session_id, seq=seq, player_text=player_text, narration=narration,

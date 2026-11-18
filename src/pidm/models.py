@@ -192,6 +192,16 @@ class Session(Base):
     encounters: Mapped[list["Encounter"]] = relationship(back_populates="session", cascade="all, delete-orphan", order_by="Encounter.id")
 
 
+class Scene(Base):
+    """A finished Scene: the Turns (by seq, inclusive) between two Scene ends. The open Scene has no row."""
+    __tablename__ = "scenes"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    session_id: Mapped[int] = mapped_column(ForeignKey("sessions.id"))
+    start_turn: Mapped[int] = mapped_column(Integer)
+    end_turn: Mapped[int] = mapped_column(Integer)
+    summary: Mapped[str] = mapped_column(Text, default="")  # empty until the worker writes it
+
+
 class Encounter(Base):
     __tablename__ = "encounters"
     id: Mapped[int] = mapped_column(primary_key=True)

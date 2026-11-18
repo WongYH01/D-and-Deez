@@ -21,6 +21,7 @@ from pidm.engine import (
     set_flag,
 )
 from pidm.models import Combatant, Encounter, InventoryItem, Quest, SrdItem, SrdMonster, SrdSpell
+from pidm.scenes import t_end_scene
 from pidm.story import ENDINGS, t_advance_beat, t_end_campaign, t_move_to, t_reveal_clue, t_tick_clock
 
 CHARACTER = "character"
@@ -1200,6 +1201,8 @@ TOOLS: dict[str, tuple[Callable[..., dict], str, dict]] = {
                    _schema({"clock": _S, "segments": _I, "reason": _S}, ["clock", "segments", "reason"])),
     "end_campaign": (t_end_campaign, "End the Campaign with an Ending whose condition holds (the Director block says when): victory, defeat or fallen_hero. Then narrate the epilogue.",
                      _schema({"ending": {"type": "string", "enum": list(ENDINGS)}}, ["ending"])),
+    "end_scene": (t_end_scene, "End the current Scene: a change of place, the end of an Encounter or a long rest. Changes nothing else.",
+                  _schema({"reason": _S}, ["reason"])),
     "lookup_rule": (t_lookup_rule, "Search the SRD rules prose. Returns the top three matching Rule sections in full, each with its heading path. Changes nothing.",
                     _schema({"query": {**_S, "description": "e.g. 'grapple' or 'falling damage'"}}, ["query"])),
     "lookup_srd": (t_lookup_srd, "Look up an SRD monster, spell or item record by slug (e.g. 'bandit-captain', 'cure-wounds', 'longsword'). Changes nothing.",
