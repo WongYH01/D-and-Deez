@@ -54,6 +54,9 @@ class Campaign(Base):
     beats: Mapped[list["Beat"]] = relationship(back_populates="campaign", cascade="all, delete-orphan", order_by="Beat.id")
     secrets: Mapped[list["Secret"]] = relationship(back_populates="campaign", cascade="all, delete-orphan", order_by="Secret.id")
     clocks: Mapped[list["Clock"]] = relationship(back_populates="campaign", cascade="all, delete-orphan", order_by="Clock.id")
+    entities: Mapped[list["Entity"]] = relationship(back_populates="campaign", cascade="all, delete-orphan", order_by="Entity.id")
+    facts: Mapped[list["Fact"]] = relationship(back_populates="campaign", cascade="all, delete-orphan", order_by="Fact.id")
+    dm_notes: Mapped[list["DmNote"]] = relationship(back_populates="campaign", cascade="all, delete-orphan", order_by="DmNote.id")
 
 
 class Character(Base):
@@ -200,6 +203,45 @@ class Scene(Base):
     start_turn: Mapped[int] = mapped_column(Integer)
     end_turn: Mapped[int] = mapped_column(Integer)
     summary: Mapped[str] = mapped_column(Text, default="")  # empty until the worker writes it
+
+
+class Entity(Base):
+    """A named NPC, place, faction or item the story remembers (design: Memory strategy)."""
+    __tablename__ = "entities"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    campaign_id: Mapped[int] = mapped_column(ForeignKey("campaigns.id"))
+    name: Mapped[str] = mapped_column(String(200))
+    kind: Mapped[str] = mapped_column(String(20))  # npc, place, faction, item
+    aliases: Mapped[list] = mapped_column(JSON, default=list)
+    summary: Mapped[str] = mapped_column(Text, default="")
+    location_slug: Mapped[str] = mapped_column(String(60), default="")  # set when the place is a bible Location
+    campaign: Mapped[Campaign] = relationship(back_populates="entities")
+
+
+class Fact(Base):
+    """A relation between two Entities over a span of Turns; retired by setting valid_to_turn, never deleted."""
+    __tablename__ = "facts"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    campaign_id: Mapped[int] = mapped_column(ForeignKey("campaigns.id"))
+    subject_id: Mapped[int] = mapped_column(ForeignKey("entities.id"))
+    relation: Mapped[str] = mapped_column(String(100))
+    object_id: Mapped[int] = mapped_column(ForeignKey("entities.id"))
+    valid_from_turn: Mapped[int] = mapped_column(Integer)
+    valid_to_turn: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    source_turn: Mapped[int] = mapped_column(Integer)
+    campaign: Mapped[Campaign] = relationship(back_populates="facts")
+    subject: Mapped[Entity] = relationship(foreign_keys=[subject_id])
+    object: Mapped[Entity] = relationship(foreign_keys=[object_id])
+
+
+class DmNote(Base):
+    """One of Claude's own notes; all of a Campaign's notes share a small cap."""
+    __tablename__ = "dm_notes"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    campaign_id: Mapped[int] = mapped_column(ForeignKey("campaigns.id"))
+    note: Mapped[str] = mapped_column(Text)
+    updated_turn: Mapped[int] = mapped_column(Integer)
+    campaign: Mapped[Campaign] = relationship(back_populates="dm_notes")
 
 
 class Encounter(Base):

@@ -30,6 +30,9 @@ easy 10, medium 15, hard 20.
 - Use add_item, remove_item and adjust_gold whenever the Character gains, spends or loses things; \
 grant_xp after an overcome challenge (end_encounter reports the XP of defeated foes); update_quest when \
 the Character takes on or advances a goal.
+- Use add_fact for lasting changes among named NPCs, places and factions (a death, an allegiance, ownership) and \
+retire_fact when one stops being true; <world> lists the current Facts with their ids. Use write_note for your \
+own notes and rulings; <notes> shows them all.
 - There is no grid: melee attacks are within 5 feet, ranged ones are not. Fleeing is narrated, then end_encounter.
 
 ## Combat
@@ -74,14 +77,18 @@ def system_prompt(campaign: Campaign) -> str:
 
 
 def user_message(snapshot: dict, player_text: str, rules: list[dict] | None = None, director: str | None = None,
-                 recap: str | None = None) -> str:
-    """Dynamic context: the state snapshot, the Director block, the recap block, any Rule sections the action names,
-    then the action."""
+                 recap: str | None = None, world: str | None = None, notes: str | None = None) -> str:
+    """Dynamic context: the state snapshot, the Director block, the recap block, world Facts, DM notes, any Rule
+    sections the action names, then the action."""
     out = f"<state>\n{json.dumps(snapshot, separators=(',', ':'))}\n</state>\n\n"
     if director:
         out += f"<director>\n{director}\n</director>\n\n"
     if recap:
         out += f"<recap>\n{recap}\n</recap>\n\n"
+    if world:
+        out += f"<world>\n{world}\n</world>\n\n"
+    if notes:
+        out += f"<notes>\n{notes}\n</notes>\n\n"
     if rules:
         sections = "\n".join(f"<rule><section>{r['section']}</section>\n{r['body']}\n</rule>" for r in rules)
         out += f"<rules>\n{sections}\n</rules>\n\n"

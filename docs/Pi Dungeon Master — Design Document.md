@@ -93,7 +93,7 @@ All data lives in one SQLite file in WAL mode on a mounted volume, so the sheet 
 | `rolls` | turn\_id, purpose, expr, dice, total, target, outcome | Engine | v1 |
 | `srd_monsters`, `srd_spells`, `srd_items` | slug, name, data (JSON) | Import script, read-only | v1 |
 | `rules_fts` | section, body (FTS5 virtual table) | Import script, read-only | v1 |
-| `entities` | id, name, kind (npc, place, faction, item), aliases, summary | Engine, worker | v2 |
+| `entities` | id, campaign_id, name, kind (npc, place, faction, item), aliases, summary, location_slug (set for bible Locations) | Engine, worker | v2 |
 | `facts` | subject\_id, relation, object\_id, valid\_from\_turn, valid\_to\_turn, source\_turn | Engine, worker | v2 |
 | `scene_vec` | scene\_id, embedding (sqlite-vec `vec0` table) | Worker | v2 |
 | `dm_notes` | id, campaign\_id, note, updated\_turn | Engine (`write_note`) | v2 |

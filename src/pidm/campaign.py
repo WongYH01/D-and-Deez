@@ -13,6 +13,7 @@ from sqlalchemy.orm import sessionmaker
 
 from pidm.bible import ACTS, Bible, validate
 from pidm.claude import ClaudeClient
+from pidm.memory import seed_entities
 from pidm.models import Beat, Campaign, Clock, Clue, Secret, Session
 from pidm.story import end
 from pidm.templates import create_character
@@ -111,12 +112,13 @@ def _seed(camp: Campaign, bible: Bible) -> None:
             for c in bible.clues if c.secret == s.slug]))
     camp.clocks += [Clock(slug=c.slug, name=c.name, segments=c.segments, filled=0, consequence=c.consequence,
                           is_main=c.main, visible=c.visible) for c in bible.clocks]
+    seed_entities(camp, bible)
     create_character(camp, camp.template, camp.character_name or None)
 
 
 def clear_story(camp: Campaign) -> None:
     """Remove a `ready` Campaign's bible, story rows and Character so a new bible can be generated."""
-    camp.beats, camp.secrets, camp.clocks, camp.quests = [], [], [], []
+    camp.beats, camp.secrets, camp.clocks, camp.quests, camp.entities = [], [], [], [], []
     camp.character = None
     camp.name, camp.premise, camp.bible, camp.setup_error = "", "", None, ""
 

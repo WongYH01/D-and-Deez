@@ -17,6 +17,7 @@ from sqlalchemy.orm import sessionmaker
 from pidm.claude import ClaudeClient, Reply, Usage
 from pidm.dice import Dice
 from pidm.engine import load_state
+from pidm.memory import HOPS, memory_blocks
 from pidm.models import Campaign, RollRecord, Session, Turn
 from pidm.prompts import OPENING, RESUME, system_prompt, user_message
 from pidm.recap import recap_block
@@ -169,9 +170,18 @@ class TurnOrchestrator:
             # Tool rounds of this Turn reread the dynamic context from the cache.
             system = [{"type": "text", "text": system_prompt(state.campaign), "cache_control": CACHE}]
             tools = tool_definitions()
-            context = user_message(snapshot(state), player_text, retrieve(db, player_text), director_block(state),
-                                   recap_block(db, state.session))
-            history = trim_history(self._history(db, campaign_id), context, self.context_budget)
+            past = self._history(db, campaign_id)
+            seen = [player_text] + [m["content"] for m in past[-4:]]  # the action and the last two Narrations
+
+            def build(hops: int) -> str:
+                world, notes = memory_blocks(state, seen, hops)
+                return user_message(snapshot(state), player_text, retrieve(db, player_text), director_block(state),
+                                    recap_block(db, state.session), world, notes)
+
+            context = build(HOPS)
+            if _tokens(len(context) + sum(len(m["content"]) for m in past)) > self.context_budget:
+                context = build(1)  # Memory strategy: Facts more than one hop away go before recent Turns do
+            history = trim_history(past, context, self.context_budget)
             messages = history + [{"role": "user", "content": [{"type": "text", "text": context,
                                                                 "cache_control": CACHE}]}]
             narration = None

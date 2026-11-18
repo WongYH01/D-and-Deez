@@ -21,6 +21,7 @@ from pidm.engine import (
     set_flag,
 )
 from pidm.models import Combatant, Encounter, InventoryItem, Quest, SrdItem, SrdMonster, SrdSpell
+from pidm.memory import KINDS, t_add_fact, t_retire_fact, t_write_note
 from pidm.scenes import t_end_scene
 from pidm.story import ENDINGS, t_advance_beat, t_end_campaign, t_move_to, t_reveal_clue, t_tick_clock
 
@@ -1203,6 +1204,14 @@ TOOLS: dict[str, tuple[Callable[..., dict], str, dict]] = {
                      _schema({"ending": {"type": "string", "enum": list(ENDINGS)}}, ["ending"])),
     "end_scene": (t_end_scene, "End the current Scene: a change of place, the end of an Encounter or a long rest. Changes nothing else.",
                   _schema({"reason": _S}, ["reason"])),
+    "add_fact": (t_add_fact, "Record a Fact: a relation between two Entities that is now true (e.g. 'Mira' 'works for' 'The Guild', 'Old Hesta' 'was killed by' 'Abbess Varn'). Names of known NPCs and places resolve by name or alias; a new name needs its kind (subject_kind / object_kind) and becomes an Entity. Record lasting changes, such as deaths, allegiances and ownership.",
+                 _schema({"subject": _S, "relation": _S, "object": _S,
+                          "subject_kind": {"type": "string", "enum": list(KINDS)},
+                          "object_kind": {"type": "string", "enum": list(KINDS)}}, ["subject", "relation", "object"])),
+    "retire_fact": (t_retire_fact, "A Fact in <world> stopped being true: retire it by its id. It is kept as history but no longer shown.",
+                    _schema({"fact_id": _I}, ["fact_id"])),
+    "write_note": (t_write_note, "Keep a DM note for yourself (running jokes, planned callbacks, player preferences, rulings); all notes are shown in <notes> every Turn. With note_id the note is replaced; an empty note deletes it. The notes share a small cap, and at the cap you must update or delete an older note.",
+                   _schema({"note": _S, "note_id": _I}, ["note"])),
     "lookup_rule": (t_lookup_rule, "Search the SRD rules prose. Returns the top three matching Rule sections in full, each with its heading path. Changes nothing.",
                     _schema({"query": {**_S, "description": "e.g. 'grapple' or 'falling damage'"}}, ["query"])),
     "lookup_srd": (t_lookup_srd, "Look up an SRD monster, spell or item record by slug (e.g. 'bandit-captain', 'cure-wounds', 'longsword'). Changes nothing.",
