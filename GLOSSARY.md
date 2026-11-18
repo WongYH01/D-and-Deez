@@ -124,6 +124,10 @@ _Avoid_: Timer, countdown, tracker
 The Clock tracking the antagonist's plan; it decides Victory or Defeat.
 _Avoid_: Doom clock
 
+**Visible clock**:
+A Clock the player can see, such as a public countdown, marked so in the Campaign bible; every other Clock, the Main clock included, stays hidden.
+_Avoid_: Public clock, shown clock
+
 **Director block**:
 The per-Turn summary of story state given to Claude: current Act and goal, open Beats, local Clues, Clocks, and Turns since last progress.
 _Avoid_: Story context, plot state

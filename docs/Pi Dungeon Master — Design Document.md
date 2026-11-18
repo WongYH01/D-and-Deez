@@ -204,13 +204,13 @@ The SRD's mechanics are fantasy: swords, armour and monsters. A cyberpunk or sci
 
 ### 2. The campaign bible
 
-One Claude call turns the setup into a campaign bible, returned as a forced tool call whose input schema comes from the bible's Pydantic models, so generated and hand-written bibles pass through the same schema. Code then checks what a schema cannot: 2 to 4 beats per act, at least three clues per secret spread over at least two locations, exactly one main clock, a victory and a defeat ending, every slug reference resolving, and an act count that matches the length (1 for a one-shot, 3 for a short campaign). A bible that fails is regenerated with the errors fed back, up to three attempts in all; then setup fails. Every item carries a slug, each secret belongs to an act, and a beat may list in `requires` beats listed before it, or secrets of its own or an earlier act, so `requires` can never deadlock an act. It contains:
+One Claude call turns the setup into a campaign bible, returned as a forced tool call whose input schema comes from the bible's Pydantic models, so generated and hand-written bibles pass through the same schema. Code then checks what a schema cannot: 2 to 4 beats per act, at least three clues per secret spread over at least two locations, exactly one main clock, which is never visible, a victory and a defeat ending, every slug reference resolving, and an act count that matches the length (1 for a one-shot, 3 for a short campaign). A bible that fails is regenerated with the errors fed back, up to three attempts in all; then setup fails. Every item carries a slug, each secret belongs to an act, and a beat may list in `requires` beats listed before it, or secrets of its own or an earlier act, so `requires` can never deadlock an act. It contains:
 
 - **Premise and central question:** what the story is about and what the player must decide or stop.
 - **Antagonist:** their goal, their plan, and what happens if no one interferes.
 - **Acts and beats:** each act has a goal and 2 to 4 beats, the story milestones that move it forward.
 - **Secrets and clues:** every revelation the player needs to progress has at least three clues in different places, following the [Three Clue Rule](https://thealexandrian.net/wordpress/1118/roleplaying-games/three-clue-rule), so one missed clue cannot stall the plot.
-- **Clocks:** progress clocks in the style of Blades in the Dark, such as an 8-segment "Ritual completes" clock for the antagonist's plan, each with a consequence when full.
+- **Clocks:** progress clocks in the style of Blades in the Dark, such as an 8-segment "Ritual completes" clock for the antagonist's plan, each with a consequence when full. A clock marked visible, such as a public countdown, is shown to the player; the rest, the main clock included, stay hidden.
 - **Key NPCs and locations,** each with a motive or purpose.
 - **Endings:** victory and defeat, each with the condition that triggers it.
 - **Opening scene:** a hook that starts mid-action and connects to the character's backstory.
@@ -248,7 +248,7 @@ Deferred to v2. In v1 the bible stays fixed for the whole campaign: three clues 
 
 When the main clock fills or the final beat resolves, the director block tells Claude the condition is met and to call `end_campaign`. If Claude does not call it in the turn the main clock fills, the orchestrator records Defeat anyway, so play cannot continue past a full main clock. Retiring needs no Claude call: the player confirms and the engine records it, with no epilogue. Victory and Defeat never hold together: once the main clock is full `advance_beat` is refused, and once the final beat is resolved the main clock can no longer be ticked.
 
-For the other endings Claude's final narration is the epilogue (a narrow victory, with the clock nearly full or a secret still hidden, can be told as bittersweet), and the campaign is marked complete. Every ending, retiring included, sends `campaign_ended` and closes the open session as `POST /session/end` does: final recap, then backup. Carrying the character into a new campaign comes with the setup wizard, not M3.
+For the other endings Claude's final narration is the epilogue (a narrow victory, with the clock nearly full or a secret still hidden, can be told as bittersweet), and the campaign is marked complete. Every ending, retiring included, sends `campaign_ended` and closes the open session as `POST /session/end` does: final recap, then backup. Carrying the character into a new campaign comes with the v2 character builder.
 
 ## Adventure import (v2)
 
@@ -337,11 +337,13 @@ Two screens: a setup wizard for new campaigns, and the play screen with the char
 - On `error`, that turn's partial lines are removed and a Retry button appears.
 - Equip and unequip are direct actions that skip Claude. They are disabled while a turn is running or an encounter is active; anything else is typed as an action.
 - On page load, `GET /log` restores the session's committed history; a turn still running appears when it commits.
-- Clocks appear in the sidebar only when the bible marks them visible (for example a public countdown); hidden clocks stay secret.
-- On `campaign_ended`, the log shows the epilogue and the sidebar offers New campaign or Continue with this character.
+- Clocks appear in the sidebar only when the bible marks them visible (for example a public countdown); hidden clocks, the main clock included, stay secret.
+- During an encounter the sidebar lists the combatants in initiative order, marks whose turn it is, and shows each one's health as a word, never as numbers: unhurt (full HP), wounded (above half), bloodied (half or less) or down (dead or knocked out).
+- On `campaign_ended`, the log shows the epilogue and the sidebar offers New campaign. Carrying the character into a new campaign waits for the v2 character builder.
 - Header controls: Campaigns, End session (triggers the final recap), About (SRD attribution).
+- On a phone the log and action box fill the screen and the sheet opens as a drawer, one tap away.
 
-**Stack.** Server-rendered HTML from FastAPI with htmx and a small script for the event stream. It works in any modern browser on a laptop or phone. A React front end can replace it later without changing the API.
+**Stack.** A React and TypeScript single-page app built with Vite, in `src/web`. FastAPI serves the built bundle at `/` next to the JSON API and the event stream, so the browser uses the same endpoints as curl or the v3 voice client. Screens use hash routes (`/#/play`, `/#/campaigns`, `/#/about`) so they never clash with API paths such as `GET /campaigns`. Styling is Tailwind v4 with shadcn/ui components built on Base UI (accessible, unstyled behaviour; the look lives in our theme), dark first with a light theme, and fonts bundled with the app so it needs no outside requests. Plain React state holds the screen; one reducer folds the event stream into the log. It works in any modern browser on a laptop or phone. In development, the Vite dev server runs on the host and proxies API and `/events` calls to FastAPI. See ADR 0004.
 
 ## API surface
 
@@ -397,9 +399,9 @@ No local model runs in the container, so CPU and memory use stay low on a Pi 5.
 
 The app ships as one Dockerfile that each machine builds locally, so the same build runs on a PC (linux/amd64) for fast testing and on the Pi 5 (linux/arm64) for play. All state is one SQLite file in a mounted folder, so a campaign moves between machines by copying that folder.
 
-**Image.** Built on the official `python:3.12-slim` base, which exists for both architectures. It contains the app, its Python dependencies (FastAPI, SQLAlchemy and the Anthropic SDK; sqlite-vec from v2) and the SRD import, and runs as a non-root user. The FastAPI server, turn orchestrator and background worker run in one process, so there is a single writer to the database.
+**Image.** Built on the official `python:3.12-slim` base, which exists for both architectures. It contains the app, its Python dependencies (FastAPI, SQLAlchemy and the Anthropic SDK; sqlite-vec from v2) and the SRD import, and runs as a non-root user. A first build stage on `node:22-slim` builds the web UI from `src/web`, and only the built files are copied into the final image, so Node never ships in it. The FastAPI server, turn orchestrator and background worker run in one process, so there is a single writer to the database.
 
-**Build.** Each machine builds its own image with `docker compose up -d --build`; the base image and the v1 dependencies have arm64 wheels, so the Pi 5 builds it in a few minutes. A multi-platform `docker buildx` build pushed to a registry can come later if rebuilding on the Pi gets slow.
+**Build.** Each machine builds its own image with `docker compose up -d --build`; the base images and the v1 dependencies have arm64 builds, so the Pi 5 builds it in a few minutes. A multi-platform `docker buildx` build pushed to a registry can come later if rebuilding on the Pi gets slow.
 
 ```yaml
 # compose.yaml
@@ -454,8 +456,8 @@ Each milestone ends in something testable, the container comes first so every la
 3. **M2: Rules grounding.** SRD import into the `srd_*` tables replacing the fixtures, the FTS5 index, keyword retrieval, `lookup_rule` and `lookup_srd`. *Exit: encounters use real stat blocks, and a grapple uses `contest` with the grappling rules in context.*
 4. **M3: Story director.** Setup inputs as terminal flags, bible generation with schema and code validation, a hand-written one-shot bible fixture, story tables, the story tools (`move_to`, `advance_beat`, `tick_clock`, `reveal_clue`, `end_campaign`), director block, stall detection and endings. *Exit: a one-shot plays from its opening hook to a valid ending in the terminal, and a scripted idle run triggers a clue within 8 turns.*
 5. **M4: Server and streaming.** FastAPI endpoints (including regenerate, retire, equip and unequip), the SSE stream wired to the M1 turn orchestrator on a turn thread, a job thread for bible generation and recaps, campaign-wide turn numbering, campaign-scoped encounters, both cache breakpoints, the token budget, background recaps, resume turns, session start and end with `VACUUM INTO` backups. *Exit: a turn submitted with curl streams rolls and narration; a forced API failure leaves game state unchanged and saves a failed turn row; turn 2 reports cached tokens; a session started without the previous final recap writes it first; campaign creation returns at once and the campaign shows as ready when its bible is saved. Cached tokens and curl streaming are checked by hand against the real API; the rest, including `cache_control` placement, is covered by tests with the fake Claude client. Databases from before M4 are not migrated.*
-6. **M5: Web UI (v1 release).** Setup wizard, sheet with conditions and visible clocks, log with roll lines, direct equip actions, reload recovery, campaign ending and the About page. *Exit: the success criteria in the Overview are met on the Pi.*
-7. **M6: v2.** World graph, scenes and scene recall, DM notes (which also hold rulings), spellcasting with spell slots, a full character builder, adventure import with solo scaling, between-session replanning, and optional non-fantasy reskins. *Exit: an NPC introduced in session 1 is recalled correctly in session 3 without replaying old turns, a spellcaster completes a fight, and an imported one-page dungeon plays to an ending using its original room text.*
+6. **M5: Web UI (v1 release).** The React single-page app in `src/web` and its Node build stage, served by FastAPI at `/`: setup wizard with premise accept or regenerate, Campaigns list, play screen with a sheet showing conditions, visible clocks and the encounter panel, log with roll lines, direct equip actions, reload recovery, campaign ending, a phone layout and the About page. Server work: the encounter in `GET /state` and a `visible` flag on bible clocks. *Exit: the success criteria in the Overview are met on the Pi. Vitest covers the event reducer; the screens are checked by hand in a browser.*
+7. **M6: v2.** World graph, scenes and scene recall, DM notes (which also hold rulings), spellcasting with spell slots, a full character builder with carrying a character into a new campaign, adventure import with solo scaling, between-session replanning, and optional non-fantasy reskins. *Exit: an NPC introduced in session 1 is recalled correctly in session 3 without replaying old turns, a spellcaster completes a fight, and an imported one-page dungeon plays to an ending using its original room text.*
 8. **M7: Voice (v3).** Push-to-talk speech-to-text feeding `POST /action`, and Piper text-to-speech reading narration aloud. *Exit: a full scene played by voice alone.*
 
 ## Open questions
@@ -463,12 +465,12 @@ Each milestone ends in something testable, the container comes first so every la
 - [ ] Ruleset: start on SRD 5.1 (2014) as proposed, or go straight to SRD 5.2 (2024)?
 - [ ] Models: is Opus worth its extra latency for narration, or only for generating the campaign bible? Decide after M3 play-tests.
 - [ ] History caching: after M5, do the logged token counts justify a third breakpoint after the recent turns, with a window that drops five turns at a time?
-- [ ] Encounter panel: show enemy HP and initiative order, or only describe them in narration?
-- [ ] Clocks: should the player see the antagonist's main clock, or only feel it through the story?
+- [x] Encounter panel: show enemy HP and initiative order, or only describe them in narration? Decided: initiative order and a health word (unhurt, wounded, bloodied, down), never HP numbers.
+- [x] Clocks: should the player see the antagonist's main clock, or only feel it through the story? Decided: the main clock stays hidden; the bible marks other clocks visible.
 - [ ] Non-fantasy settings in v2: reskin SRD mechanics, or add a separate open ruleset?
-- [ ] Character carry-over: keep level and gear in a new campaign, or reset to level 1?
+- [ ] Character carry-over: keep level and gear in a new campaign, or reset to level 1? Deferred to the v2 character builder; v1 offers only New campaign after an ending.
 - [ ] Embeddings in v2: Voyage AI (an extra API and key) or a small local model in the container?
-- [ ] Remote play: is Tailscale needed for v1, or is home Wi-Fi enough?
+- [x] Remote play: is Tailscale needed for v1, or is home Wi-Fi enough? Decided: home Wi-Fi is enough for v1.
 - [ ] Import (v2): send PDFs to Claude as whole documents, or extract text locally first to save tokens?
 
 ## Design review
