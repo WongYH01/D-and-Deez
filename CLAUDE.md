@@ -6,7 +6,7 @@ Tests run on the host in the repo's venv: `.venv/Scripts/pytest` (Windows) or `.
 
 Tool registry: the `TOOLS` dict at the end of `src/pidm/tools.py`; story tools live in `src/pidm/story.py`. Test seams and `FakeClaude`: `tests/conftest.py` (seams listed in `CODING_STANDARDS.md`).
 
-Server: `create_app` in `src/pidm/app.py` (Seam 4, tests in `tests/test_server.py`). Recaps: `src/pidm/recap.py`.
+Server: `create_app` in `src/pidm/app.py` (Seam 4, tests in `tests/test_server.py`, where `act()` runs the Turn synchronously). `fixture_bible` in `tests/conftest.py`: the Main clock is `clock.tide` (6 segments, so two 3-segment ticks fill it). Recaps: `src/pidm/recap.py`.
 
 Event contract for the UI: payloads in the design document's API surface section; emit order in `TurnOrchestrator._run` (`src/pidm/orchestrator.py`): `roll`*, `narration_delta`, `state_changed`, `turn_done`, or `error` on failure. `running_turn_seq` clears only after `turn_done`, and an event can beat the `POST /action` response.
 

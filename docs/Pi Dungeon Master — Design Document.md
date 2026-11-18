@@ -339,7 +339,7 @@ Two screens: a setup wizard for new campaigns, and the play screen with the char
 - On page load, `GET /log` restores the session's committed history; a turn still running appears when it commits.
 - Clocks appear in the sidebar only when the bible marks them visible (for example a public countdown); hidden clocks, the main clock included, stay secret.
 - During an encounter the sidebar lists the Character and the Combatants in initiative order, marks whose turn it is, and shows each one's health as a word, never as numbers: unhurt (full HP), wounded (above half), bloodied (half or less) or down (dead or knocked out).
-- On `campaign_ended`, the log shows the epilogue and the sidebar offers New campaign. Carrying the character into a new campaign waits for the v2 character builder.
+- On `campaign_ended`, the log shows the epilogue and the sidebar offers New campaign. Every Ending closes the Session, so `GET /state` then returns 404: only the live event carries the Ending, and a reload lands on Campaigns. Carrying the character into a new campaign waits for the v2 character builder.
 - Header controls: Campaigns, End session (triggers the final recap), About (SRD attribution).
 - On a phone the log and action box fill the screen and the sheet opens as a drawer, one tap away.
 
