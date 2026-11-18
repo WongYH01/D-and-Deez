@@ -1,4 +1,4 @@
-# Pi Dungeon Master
+# D and Deez
 
 A single-player, text-based D&D 5e game. Claude narrates; the app's code referees the rules and plans the story.
 

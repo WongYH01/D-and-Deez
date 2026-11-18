@@ -6,9 +6,10 @@ The API key comes from the environment (ANTHROPIC_API_KEY) and is never logged.
 
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass, field
 from typing import Callable, Protocol
+
+from d_and_deez.config import env
 
 
 @dataclass
@@ -46,20 +47,20 @@ DEFAULT_RECAP_MODEL = "claude-haiku-5-5"
 
 
 def plan_client() -> "AnthropicClient":
-    """The client that writes Campaign bibles; PIDM_PLAN_MODEL lets Opus be compared without a code change."""
-    return AnthropicClient(model=os.environ.get("PIDM_PLAN_MODEL", DEFAULT_MODEL))
+    """The client that writes Campaign bibles; DND_PLAN_MODEL lets Opus be compared without a code change."""
+    return AnthropicClient(model=env("PLAN_MODEL", DEFAULT_MODEL))
 
 
 def recap_client() -> "AnthropicClient":
-    """The client that writes Recaps; PIDM_RECAP_MODEL trades cost for quality without a code change."""
-    return AnthropicClient(model=os.environ.get("PIDM_RECAP_MODEL", DEFAULT_RECAP_MODEL), max_tokens=2000)
+    """The client that writes Recaps; DND_RECAP_MODEL trades cost for quality without a code change."""
+    return AnthropicClient(model=env("RECAP_MODEL", DEFAULT_RECAP_MODEL), max_tokens=2000)
 
 
 class AnthropicClient:
     def __init__(self, model: str | None = None, max_tokens: int = 16000, max_retries: int = 4):
         import anthropic
 
-        self.model = model or os.environ.get("PIDM_MODEL", DEFAULT_MODEL)
+        self.model = model or env("MODEL", DEFAULT_MODEL)
         self.max_tokens = max_tokens
         # The SDK retries 429, 5xx and connection errors with exponential backoff.
         self.client = anthropic.Anthropic(max_retries=max_retries)

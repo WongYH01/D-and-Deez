@@ -11,19 +11,19 @@ from typing import Any, Callable
 
 from sqlalchemy import select
 
-from pidm import rules, srd
-from pidm.dice import DiceError, Roll, parse
-from pidm.engine import (
+from d_and_deez import rules, srd
+from d_and_deez.dice import DiceError, Roll, parse
+from d_and_deez.engine import (
     GameState, ToolError, add_condition, armor_class, ask_roll, can_act, change_exhaustion, character_check_modes,
     check_bonus, d20_test, death_save, end_rage, equipped_armor, expire_conditions, has, heal_character,
     hp_max, hurt_character, hurt_combatant, incapacitated, lucky, m_check_bonus, m_mod, m_save_bonus, mod,
     passive_perception, prof, prone_rider, resolve_dying, ready_to_flee, remove_condition, resist_character, save_bonus,
     save_roll, set_flag,
 )
-from pidm.models import Combatant, Encounter, InventoryItem, Quest, SpellSlot, SrdItem, SrdMonster, SrdSpell
-from pidm.memory import KINDS, t_add_fact, t_retire_fact, t_write_note
-from pidm.scenes import t_end_scene
-from pidm.story import ENDINGS, t_advance_beat, t_end_campaign, t_move_to, t_reveal_clue, t_tick_clock
+from d_and_deez.models import Combatant, Encounter, InventoryItem, Quest, SpellSlot, SrdItem, SrdMonster, SrdSpell
+from d_and_deez.memory import KINDS, t_add_fact, t_retire_fact, t_write_note
+from d_and_deez.scenes import t_end_scene
+from d_and_deez.story import ENDINGS, t_advance_beat, t_end_campaign, t_move_to, t_reveal_clue, t_tick_clock
 
 CHARACTER = "character"
 

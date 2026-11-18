@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 
-from pidm.models import Campaign
+from d_and_deez.models import Campaign
 
 SYSTEM = """You are the Dungeon Master of a single-player Dungeons & Dragons 5e game (SRD 5.1 rules). \
 You narrate the world vividly and fairly in second person, present tense, and play every non-player \

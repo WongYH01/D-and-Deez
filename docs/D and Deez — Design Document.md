@@ -1,10 +1,10 @@
-# Pi Dungeon Master — Design Document
+# D and Deez — Design Document
 
 Nov 17, 2026 · @W
 
 ## Overview
 
-Pi Dungeon Master is a single-player, text-based D&D 5e game served as a web app. Claude (via the Anthropic API) is the narrator; the app's own code is the referee and the story planner. It ships as one Docker image that runs the same way on a PC for testing and on a Raspberry Pi 5 for everyday play.
+D and Deez is a single-player, text-based D&D 5e game served as a web app. Claude (via the Anthropic API) is the narrator; the app's own code is the referee and the story planner. It ships as one Docker image that runs the same way on any 64-bit host, such as a PC for testing or a Raspberry Pi 5 for everyday play.
 
 **Problem.** LLM game masters tell good scenes but lose track of state, invent rules, and wander without a plot. This design gives scene-level storytelling to Claude and keeps every number, rule, world fact and plot thread in code and SQLite.
 
@@ -47,7 +47,7 @@ Every phase reuses the same turn pipeline. Voice in v3 is only a new way to subm
 
 ## System architecture
 
-Everything runs as one Python process inside one Docker container, on a PC or the Pi 5; the only outside dependency is the Claude API.
+Everything runs as one Python process inside one Docker container, on any 64-bit host (a PC, or a Pi 5); the only outside dependency is the Claude API.
 
 &#91;embedded content: system architecture · 8 components in one container\]
 
@@ -116,7 +116,7 @@ From v2, adventure import adds `sources`, `source_chunks` (FTS5) and `campaigns.
 
 Claude narrates scenes and decides what to attempt; every mechanical and plot result comes back from a tool. The prompt is ordered so that both the campaign-level material and the per-turn context are served from the cache on every tool round.
 
-**Models (configurable).** Claude Sonnet 5.5 (`claude-sonnet-5-5`) narrates and plans the campaign. Claude Haiku 5.5 (`claude-haiku-5-5`) writes recaps and scene summaries. The bible model is set by `PIDM_PLAN_MODEL` (default Sonnet), so Opus can be tried for planning without a code change. Whether Opus is worth its extra latency for narration or campaign planning is an open question.
+**Models (configurable).** Claude Sonnet 5.5 (`claude-sonnet-5-5`) narrates and plans the campaign. Claude Haiku 5.5 (`claude-haiku-5-5`) writes recaps and scene summaries. The bible model is set by `DND_PLAN_MODEL` (default Sonnet), so Opus can be tried for planning without a code change. Whether Opus is worth its extra latency for narration or campaign planning is an open question.
 
 **Prompt layout, in cache order**
 
@@ -236,7 +236,7 @@ Every turn the dynamic context carries a director block of about 150 to 300 toke
 
 Deferred to v2. In v1 the bible stays fixed for the whole campaign: three clues per secret and stall detection keep the plot moving when the player goes off-script, and a one-shot never needs a replan. From v2, at session end the background worker compares the bible with what actually happened and revises future beats, clues and clocks; for example, if the player killed the informant, his clues move elsewhere.
 
-The replan runs once per session end, as an ordinary background job after the Final recap and before the backup; it is skipped for a session where the player took no action, and a failed or unchanged replan adds no version. Claude proposes a whole bible and the code merges it: only open Beats, unrevealed Clues and side Clocks with no progress come from the proposal, and the merged bible must pass the same checks as a generated one, with the errors fed back for up to 3 attempts. It changes only unplayed content: it never touches revealed Clues, completed Beats or the Endings' conditions. Each replan is saved as a new bible version, so a bad one can be rolled back (`pidm.replan.rollback` re-applies an earlier version's unplayed content as a new version; there is no endpoint yet). `Campaign.bible` always holds the latest version, which is what play uses. The next session's opening waits in the job queue behind the replan, and no Turn runs while no session is open, so a replan never overlaps a Turn. The player sees only a neutral "the story adapted" line in the Campaigns view (`adapted` on `GET /campaigns` is a flag, never the diff); the full diff is logged server-side and is for the player to read after the Campaign ends.
+The replan runs once per session end, as an ordinary background job after the Final recap and before the backup; it is skipped for a session where the player took no action, and a failed or unchanged replan adds no version. Claude proposes a whole bible and the code merges it: only open Beats, unrevealed Clues and side Clocks with no progress come from the proposal, and the merged bible must pass the same checks as a generated one, with the errors fed back for up to 3 attempts. It changes only unplayed content: it never touches revealed Clues, completed Beats or the Endings' conditions. Each replan is saved as a new bible version, so a bad one can be rolled back (`d_and_deez.replan.rollback` re-applies an earlier version's unplayed content as a new version; there is no endpoint yet). `Campaign.bible` always holds the latest version, which is what play uses. The next session's opening waits in the job queue behind the replan, and no Turn runs while no session is open, so a replan never overlaps a Turn. The player sees only a neutral "the story adapted" line in the Campaigns view (`adapted` on `GET /campaigns` is a flag, never the diff); the full diff is logged server-side and is for the player to read after the Campaign ends.
 
 ### 6. Ending
 
@@ -303,7 +303,7 @@ Each kind of memory is stored in the shape that fits it and fetched by code befo
 
 **Finding entities without an LLM call.** Entities tied to the current location and scene are always included, so "him" or "the tavern" still resolves. The context builder also matches the action and the last two narrations against entity names and aliases as whole words, ignoring case and skipping aliases shorter than four letters or on a stop-word list, then pulls their current facts (`valid_to_turn` empty) within 2 hops.
 
-**Writing memory.** After every 10th committed turn of a session and at session end, the background worker (Haiku, set by `PIDM_RECAP_MODEL`) folds the turns since its last update into the rolling recap. From v2 it also summarises each finished scene, proposes new or retired facts, which go through the engine's fact functions so validation stays in one place, and stores the scene embedding. Embeddings come from Voyage AI, Anthropic's recommended provider (Anthropic has no embedding model of its own), or a small local model; which one is an open question.
+**Writing memory.** After every 10th committed turn of a session and at session end, the background worker (Haiku, set by `DND_RECAP_MODEL`) folds the turns since its last update into the rolling recap. From v2 it also summarises each finished scene, proposes new or retired facts, which go through the engine's fact functions so validation stays in one place, and stores the scene embedding. Embeddings come from Voyage AI, Anthropic's recommended provider (Anthropic has no embedding model of its own), or a small local model; which one is an open question.
 
 **Budget (v1).** The dynamic context block and the recent-turn history share one token budget, 8,000 tokens by default and set in config. When it is exceeded, content is dropped in this order: rule sections beyond the top two, then (v2) scene recall and facts more than one hop away, then the oldest recent turns. The state snapshot, director block and recap are never dropped. Tokens are estimated as characters divided by four, with no counting call, so the budget adds no latency.
 
@@ -531,7 +531,7 @@ An independent auditor reviewed the first draft's logical flow on 2026-11-17 and
 
 ### Simplification pass
 
-A later pass on 2026-11-17 trimmed robustness that a one-player game on a Pi does not need in v1, mostly by moving it to v2 or a later optimisation; the core loop, code-computed mechanics, bounded context and plot structure are unchanged.
+A later pass on 2026-11-17 trimmed robustness that a one-player game on modest hardware does not need in v1, mostly by moving it to v2 or a later optimisation; the core loop, code-computed mechanics, bounded context and plot structure are unchanged.
 
 | Area | Change | Why |
 | --- | --- | --- |

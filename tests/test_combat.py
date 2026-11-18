@@ -1,6 +1,6 @@
 """Seam 1: attacks, action economy, Encounters and monster turns through the tool dispatcher.
 
-Template numbers (from pidm.templates): Fighter Bram Str 16, Dex 14, AC 19, HP 12, longsword +5 / 1d8+3.
+Template numbers (from d_and_deez.templates): Fighter Bram Str 16, Dex 14, AC 19, HP 12, longsword +5 / 1d8+3.
 Rogue Pip Dex 17, AC 14, HP 10, shortsword +5 / 1d6+3. Barbarian Grusk Str 17, Con 15, AC 13, HP 14,
 greataxe +5 / 1d12+3. Monster Stat blocks are the imported SRD 5.1 records.
 """
@@ -453,7 +453,7 @@ def test_reckless_not_allowed_after_a_grapple(make_game):
 def test_an_encounter_started_in_one_session_continues_in_the_next(make_game):
     # A fight carries over when a Session closes (design: Data model, "One open session").
     from datetime import datetime, timezone
-    from pidm.models import Session
+    from d_and_deez.models import Session
 
     g = make_game("fighter")
     fight(g, "goblin", char_init=1, monster_inits=[20])  # Goblin 1 (22) acts before Bram (3)

@@ -7,7 +7,7 @@ import io
 
 from sqlalchemy import text as sql
 
-from pidm.models import Campaign, Source
+from d_and_deez.models import Campaign, Source
 
 from conftest import SETUP, bible_call, campaigns, fixture_bible, start, text  # noqa: F401 (server fixture)
 

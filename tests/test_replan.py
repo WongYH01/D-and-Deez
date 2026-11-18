@@ -7,10 +7,10 @@ import copy
 import pytest
 from sqlalchemy import select
 
-from pidm.bible import Bible
-from pidm.claude import ClaudeError
-from pidm.models import BibleVersion, Campaign
-from pidm.replan import REPLAN_TOOL, rollback
+from d_and_deez.bible import Bible
+from d_and_deez.claude import ClaudeError
+from d_and_deez.models import BibleVersion, Campaign
+from d_and_deez.replan import REPLAN_TOOL, rollback
 
 from conftest import act, campaigns, create, fixture_bible, start, text, tool
 

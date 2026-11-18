@@ -1,4 +1,4 @@
-"""Scripted Claude clients for checking the web UI by hand with no API key: `PIDM_FAKE_CLAUDE=1` (see `from_env`).
+"""Scripted Claude clients for checking the web UI by hand with no API key: `DND_FAKE_CLAUDE=1` (see `from_env`).
 
 Campaign creation (the setup wizard at `#/setup`) gets the test fixture bible; each later bible adds "(take N)" to its premise.
 To reach the Play screen without the wizard, create a Campaign, wait until `GET /campaigns` shows it "ready", and open a Session:
@@ -13,20 +13,20 @@ Each Turn answers by the player's action:
   and "flee" ends the Encounter;
 - "wait" ticks the Visible clock "The cult grows suspicious" by 1 (the Main clock stays hidden);
 - anything else gets a short Narration.
-Every call waits `PIDM_FAKE_DELAY` seconds (default 1) so the thinking indicator and the locked input show.
+Every call waits `DND_FAKE_DELAY` seconds (default 1) so the thinking indicator and the locked input show.
 """
 
 from __future__ import annotations
 
 import itertools
 import json
-import os
 import time
 from pathlib import Path
 from typing import Literal
 
-from pidm.claude import ClaudeError, Reply, Usage
-from pidm.prompts import OPENING, RESUME
+from d_and_deez.claude import ClaudeError, Reply, Usage
+from d_and_deez.config import env
+from d_and_deez.prompts import OPENING, RESUME
 
 # shortcut: reads the bible from tests/, so dev mode runs from a repo checkout only, not the Docker image.
 BIBLE = Path(__file__).resolve().parents[2] / "tests" / "fixtures" / "one_shot_bible.json"
@@ -46,7 +46,7 @@ def _tool(name: str, args: dict) -> Reply:
 class DevClaude:
     def __init__(self, role: Literal["turn", "plan", "recap"]):
         self.role = role
-        self.delay = float(os.environ.get("PIDM_FAKE_DELAY", "1"))
+        self.delay = float(env("FAKE_DELAY", "1"))
         self.takes = 0  # bibles generated, across all Campaigns
 
     def send(self, *, system, messages, tools, tools_enabled, on_text=None, force_tool=None) -> Reply:

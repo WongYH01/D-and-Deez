@@ -12,15 +12,15 @@ from fastapi.testclient import TestClient
 from types import SimpleNamespace
 from sqlalchemy import ColumnDefault, select
 
-from pidm.app import create_app
-from pidm.campaign import PLAN_TOOL, Setup, start_campaign
-from pidm.claude import Reply, Usage
-from pidm.db import open_db
-from pidm.dice import Dice
-from pidm.engine import load_state
-from pidm.models import Campaign, Session
-from pidm.templates import create_character
-from pidm.tools import dispatch
+from d_and_deez.app import create_app
+from d_and_deez.campaign import PLAN_TOOL, Setup, start_campaign
+from d_and_deez.claude import Reply, Usage
+from d_and_deez.db import open_db
+from d_and_deez.dice import Dice
+from d_and_deez.engine import load_state
+from d_and_deez.models import Campaign, Session
+from d_and_deez.templates import create_character
+from d_and_deez.tools import dispatch
 
 
 FIXTURE_BIBLE = Path(__file__).parent / "fixtures" / "one_shot_bible.json"

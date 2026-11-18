@@ -166,7 +166,7 @@ cython_debug/
 # JetBrains
 .idea/
 
-# Pi Dungeon Master runtime folders
+# D and Deez runtime folders
 /data/
 /backups/
 

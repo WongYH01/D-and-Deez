@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pidm.story import director_block
+from d_and_deez.story import director_block
 
 from conftest import fixture_bible
 

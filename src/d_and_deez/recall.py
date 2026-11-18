@@ -14,9 +14,9 @@ from typing import Protocol
 from sqlalchemy import text
 from sqlalchemy.orm import sessionmaker
 
-from pidm.models import Scene
+from d_and_deez.models import Scene
 
-log = logging.getLogger("pidm.recall")
+log = logging.getLogger("d_and_deez.recall")
 
 DEFAULT_MODEL = "BAAI/bge-small-en-v1.5"
 DIM = 384  # shortcut: the `scene_vec` column is fixed at bge-small's size; another size needs a new migration

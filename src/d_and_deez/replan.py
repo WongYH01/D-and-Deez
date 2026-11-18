@@ -17,13 +17,13 @@ from sqlalchemy.orm import sessionmaker
 
 from pydantic import ValidationError
 
-from pidm.bible import Bible, validate
-from pidm.campaign import ask_bible
-from pidm.claude import ClaudeClient
-from pidm.prompts import OPENING, RESUME
-from pidm.models import Beat, BibleVersion, Campaign, Clock, Clue, Session, Turn
+from d_and_deez.bible import Bible, validate
+from d_and_deez.campaign import ask_bible
+from d_and_deez.claude import ClaudeClient
+from d_and_deez.prompts import OPENING, RESUME
+from d_and_deez.models import Beat, BibleVersion, Campaign, Clock, Clue, Session, Turn
 
-log = logging.getLogger("pidm.replan")
+log = logging.getLogger("d_and_deez.replan")
 
 REPLAN_TOOL = "revise_campaign_bible"
 

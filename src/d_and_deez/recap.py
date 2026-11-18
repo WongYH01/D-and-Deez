@@ -11,10 +11,10 @@ import logging
 from sqlalchemy import select
 from sqlalchemy.orm import Session as DbSession, sessionmaker
 
-from pidm.claude import ClaudeClient
-from pidm.models import Session, Turn
+from d_and_deez.claude import ClaudeClient
+from d_and_deez.models import Session, Turn
 
-log = logging.getLogger("pidm.recap")
+log = logging.getLogger("d_and_deez.recap")
 
 ROLLING_EVERY = 10  # committed Turns of a Session between Rolling recap rewrites
 ROLLING_WORDS = 400

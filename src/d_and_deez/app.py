@@ -1,7 +1,7 @@
 """HTTP server: the v1 API and the SSE event stream (design document: API surface, Turn lifecycle).
 
 `create_app` builds the app from injected parts (Seam 4); `from_env` builds it with real Claude clients for
-uvicorn (`uvicorn pidm.app:from_env --factory`). Turns, opening Turns and resume Turns run on the turn thread;
+uvicorn (`uvicorn d_and_deez.app:from_env --factory`). Turns, opening Turns and resume Turns run on the turn thread;
 bible generation, Recaps, replans and backups run in order on the job thread (ADR 0001). With `inline`, both run on
 the request thread before the response returns.
 """
@@ -25,23 +25,24 @@ from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import func, select
 from sqlalchemy.orm import sessionmaker
 
-from pidm import srd
-from pidm.campaign import Setup, build_campaign, clear_story, new_campaign, retire
-from pidm.claude import AnthropicClient, ClaudeClient, plan_client as make_plan_client, recap_client as make_recap_client
-from pidm.db import open_db
-from pidm.engine import hp_max, load_state, skill_list, speed
-from pidm.models import Campaign, Scene, Session, Source, Turn
-from pidm.orchestrator import TurnOrchestrator, next_seq
-from pidm.prompts import OPENING, RESUME
-from pidm.recall import DEFAULT_MODEL, Embedder, FastEmbedder, embed_scene, reembed_stale
-from pidm.scenes import write_scene_summary
-from pidm.replan import replan
-from pidm.recap import ROLLING_EVERY, write_final_recap, write_rolling_recap
-from pidm.sources import PARTY_WARNING, SourceError, delete_source, store_source
-from pidm.templates import TEMPLATES
-from pidm.tools import snapshot
+from d_and_deez import config, srd
+from d_and_deez.campaign import Setup, build_campaign, clear_story, new_campaign, retire
+from d_and_deez.config import env
+from d_and_deez.claude import AnthropicClient, ClaudeClient, plan_client as make_plan_client, recap_client as make_recap_client
+from d_and_deez.db import open_db
+from d_and_deez.engine import hp_max, load_state, skill_list, speed
+from d_and_deez.models import Campaign, Scene, Session, Source, Turn
+from d_and_deez.orchestrator import TurnOrchestrator, next_seq
+from d_and_deez.prompts import OPENING, RESUME
+from d_and_deez.recall import DEFAULT_MODEL, Embedder, FastEmbedder, embed_scene, reembed_stale
+from d_and_deez.scenes import write_scene_summary
+from d_and_deez.replan import replan
+from d_and_deez.recap import ROLLING_EVERY, write_final_recap, write_rolling_recap
+from d_and_deez.sources import PARTY_WARNING, SourceError, delete_source, store_source
+from d_and_deez.templates import TEMPLATES
+from d_and_deez.tools import snapshot
 
-log = logging.getLogger("pidm.server")
+log = logging.getLogger("d_and_deez.server")
 
 Emit = Callable[[str, dict], None]
 MAX_UPLOAD_BYTES = 50_000_000
@@ -158,7 +159,7 @@ def create_app(factory: sessionmaker, *, turn_client: ClaudeClient, plan_client:
                recap_client: ClaudeClient, backup_dir: str | Path, inline: bool = False, round_cap: int = 4,
                context_budget: int = 8000, web_dir: str | Path | None = None, prompt_timeout: float = 600,
                embedder: Embedder | None = None, sources_dir: str | Path = "data/sources") -> FastAPI:
-    app = FastAPI(title="Pi Dungeon Master")
+    app = FastAPI(title="D and Deez")
     emit = app.state.broadcaster = Broadcaster()
     orch = TurnOrchestrator(factory, turn_client, round_cap=round_cap, context_budget=context_budget,
                             prompt_timeout=prompt_timeout, embedder=embedder)
@@ -185,7 +186,7 @@ def create_app(factory: sessionmaker, *, turn_client: ClaudeClient, plan_client:
 
     def backup(session_id: int) -> None:
         backup_dir.mkdir(parents=True, exist_ok=True)
-        path = backup_dir / f"pidm-{datetime.now(timezone.utc):%Y%m%d-%H%M%S}-session{session_id}.sqlite"
+        path = backup_dir / f"d-and-deez-{datetime.now(timezone.utc):%Y%m%d-%H%M%S}-session{session_id}.sqlite"
         try:
             with factory.kw["bind"].connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
                 conn.exec_driver_sql("VACUUM INTO ?", (str(path),))
@@ -561,21 +562,21 @@ def create_app(factory: sessionmaker, *, turn_client: ClaudeClient, plan_client:
 
 
 def from_env() -> FastAPI:
-    """The real app: SQLite at PIDM_DB, backups in PIDM_BACKUP_DIR, the web bundle from PIDM_WEB_DIR, Claude clients
-    from the environment, or scripted ones with PIDM_FAKE_CLAUDE=1 (pidm.devclaude)."""
-    db_path = os.environ.get("PIDM_DB", "data/pidm.sqlite")
+    """The real app: SQLite at DND_DB, backups in DND_BACKUP_DIR, the web bundle from DND_WEB_DIR, Claude clients
+    from the environment, or scripted ones with DND_FAKE_CLAUDE=1 (d_and_deez.devclaude)."""
+    db_path = config.db_path()
     os.makedirs(os.path.dirname(os.path.abspath(db_path)), exist_ok=True)
-    if os.environ.get("PIDM_FAKE_CLAUDE") == "1":
-        from pidm.devclaude import DevClaude
+    if env("FAKE_CLAUDE") == "1":
+        from d_and_deez.devclaude import DevClaude
         turn, plan, recap = DevClaude("turn"), DevClaude("plan"), DevClaude("recap")
         embedder = None  # no model download in dev
     else:
         turn, plan, recap = AnthropicClient(), make_plan_client(), make_recap_client()
-        embedder = FastEmbedder(os.environ.get("PIDM_EMBED_MODEL", DEFAULT_MODEL))
+        embedder = FastEmbedder(env("EMBED_MODEL", DEFAULT_MODEL))
     return create_app(open_db(db_path), turn_client=turn, plan_client=plan,
                       recap_client=recap, embedder=embedder,
-                      sources_dir=os.environ.get("PIDM_SOURCES_DIR", os.path.join(os.path.dirname(os.path.abspath(db_path)), "sources")),
-                      backup_dir=os.environ.get("PIDM_BACKUP_DIR", "/backups"),
-                      round_cap=int(os.environ.get("PIDM_ROUND_CAP", "4")),
-                      context_budget=int(os.environ.get("PIDM_CONTEXT_BUDGET", "8000")),
-                      web_dir=os.environ.get("PIDM_WEB_DIR", "src/web/dist"))
+                      sources_dir=env("SOURCES_DIR", os.path.join(os.path.dirname(os.path.abspath(db_path)), "sources")),
+                      backup_dir=env("BACKUP_DIR", "/backups"),
+                      round_cap=int(env("ROUND_CAP", "4")),
+                      context_budget=int(env("CONTEXT_BUDGET", "8000")),
+                      web_dir=env("WEB_DIR", "src/web/dist"))

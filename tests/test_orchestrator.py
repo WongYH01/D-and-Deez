@@ -5,12 +5,12 @@ from __future__ import annotations
 import pytest
 from sqlalchemy import select
 
-from pidm.claude import ClaudeError, Usage
-from pidm.engine import load_state
-from pidm.models import Campaign, RollRecord, Session, Turn
-from pidm.campaign import Setup, start_campaign
-from pidm.orchestrator import CampaignEnded, TurnAlreadyRunning, TurnOrchestrator
-from pidm.templates import create_character
+from d_and_deez.claude import ClaudeError, Usage
+from d_and_deez.engine import load_state
+from d_and_deez.models import Campaign, RollRecord, Session, Turn
+from d_and_deez.campaign import Setup, start_campaign
+from d_and_deez.orchestrator import CampaignEnded, TurnAlreadyRunning, TurnOrchestrator
+from d_and_deez.templates import create_character
 
 from conftest import Events, FakeClaude, fixture_bible, scripted_rng, text, tool
 

@@ -12,11 +12,11 @@ import logging
 from sqlalchemy import func, select
 from sqlalchemy.orm import sessionmaker
 
-from pidm.claude import ClaudeClient
-from pidm.engine import GameState, ToolError
-from pidm.models import Scene, Session, Turn
+from d_and_deez.claude import ClaudeClient
+from d_and_deez.engine import GameState, ToolError
+from d_and_deez.models import Scene, Session, Turn
 
-log = logging.getLogger("pidm.scenes")
+log = logging.getLogger("d_and_deez.scenes")
 
 MAX_SCENE_TURNS = 15  # Memory strategy: a Scene ends after 15 Turns without end_scene
 SCENE_WORDS = 120

@@ -1,6 +1,6 @@
 """Seam 1: caster Templates, spell slots and their recovery through the tool dispatcher (R18)."""
 
-from pidm.tools import snapshot
+from d_and_deez.tools import snapshot
 
 
 def slots(g):
@@ -72,7 +72,7 @@ def test_template_spells_are_on_the_class_list_in_the_srd_data(make_game):
     # Counts are SRD Wizard and Cleric level 1: 3 cantrips; Wizard spellbook of 6; prepared = ability mod + level
     # (Wizard 3 + 1 = 4; Cleric 3 + 1 = 4, plus the Life domain's bless and cure-wounds).
     from sqlalchemy import select
-    from pidm.models import SrdSpell
+    from d_and_deez.models import SrdSpell
     for template, cls, prepared in (("wizard", "Wizard", 4), ("cleric", "Cleric", 6)):
         g = make_game(template)
         spells = g.ch.spells
@@ -186,10 +186,10 @@ def test_casting_uses_the_action_and_a_reaction_spell_uses_the_reaction(make_gam
 
 def test_a_caster_completes_an_encounter_through_the_orchestrator(factory):
     from sqlalchemy import select
-    from pidm.engine import load_state
-    from pidm.models import Campaign, Combatant, Session
-    from pidm.orchestrator import TurnOrchestrator
-    from pidm.templates import create_character
+    from d_and_deez.engine import load_state
+    from d_and_deez.models import Campaign, Combatant, Session
+    from d_and_deez.orchestrator import TurnOrchestrator
+    from d_and_deez.templates import create_character
     from conftest import Events, FakeClaude, scripted_rng, text, tool
     with factory() as db:
         camp = Campaign(name="Test", premise="A test.")

@@ -106,7 +106,7 @@ def test_multiattack_skips_parts_the_engine_cannot_resolve(make_game):
 
 def test_every_srd_monster_plays_through_the_engine(make_game):
     # R4, R16: every imported Stat block either fights without crashing or is refused at start_encounter.
-    monsters = json.loads(resources.files("pidm.data").joinpath("5e-SRD-Monsters.json").read_text(encoding="utf-8"))
+    monsters = json.loads(resources.files("d_and_deez.data").joinpath("5e-SRD-Monsters.json").read_text(encoding="utf-8"))
     refused = set()
     for i, m in enumerate(monsters):
         g = make_game(("fighter", "rogue", "barbarian")[i % 3]).random(i)

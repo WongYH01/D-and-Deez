@@ -1,7 +1,7 @@
 """Session report for the v1 release check (#20): cost per 30 minutes, then the Turn and Roll log.
 
-Reads the SQLite file directly (stdlib only; run it on the Pi or on a copy of the DB):
-    python scripts/session_report.py --db data/pidm.sqlite [--session 3] [--no-log] [--bucket 30]
+Reads the SQLite file directly (stdlib only; run it on the host or on a copy of the DB):
+    python scripts/session_report.py --db data/d-and-deez.sqlite [--session 3] [--no-log] [--bucket 30]
 
 Cost covers Turn calls only (narration and tools). Recap and bible-planning calls store no tokens, so they are
 not counted; the Haiku recap is small. Prices are USD per million tokens (Sonnet 5.5 defaults); override with flags.
@@ -40,7 +40,7 @@ def _ts(s: str) -> datetime:
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--db", default="data/pidm.sqlite")
+    ap.add_argument("--db", default="data/d-and-deez.sqlite")
     ap.add_argument("--session", type=int, help="Session id (default: the latest)")
     ap.add_argument("--bucket", type=int, default=30, help="minutes per cost row")
     ap.add_argument("--no-log", action="store_true", help="cost table only")

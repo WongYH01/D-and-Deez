@@ -16,11 +16,12 @@ from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
 from sqlalchemy import func, select
 
-from pidm.app import create_app
-from pidm.campaign import PLAN_TOOL
-from pidm.claude import ClaudeError, Usage
-from pidm.devclaude import DevClaude
-from pidm.models import Campaign, Character, Combatant, Session, SpellSlot, Turn
+from d_and_deez.app import create_app, from_env
+from d_and_deez.campaign import PLAN_TOOL
+from d_and_deez.claude import ClaudeError, Usage
+from d_and_deez.db import open_db
+from d_and_deez.devclaude import DevClaude
+from d_and_deez.models import Campaign, Character, Combatant, Session, SpellSlot, Turn
 
 from conftest import SETUP, Events, FakeClaude, act, bible_call, campaigns, create, fixture_bible, start, text, tool  # noqa: F401 (make_server, server fixtures come from conftest)
 
@@ -191,7 +192,7 @@ def test_session_end_writes_the_final_recap_and_a_backup(factory, server):
     row = session_row(factory, sid)
     assert row.ended_at is not None and row.final_recap == "You landed on the Reed Shore in the fog."
     assert "Fog on the Reed Shore" in server.recap.requests[0]["messages"][0]["content"]
-    assert len(list(server.backups.glob("*.sqlite"))) == 1
+    assert [p.name[:12] for p in server.backups.glob("*.sqlite")] == ["d-and-deez-2"]
 
 
 def test_session_start_writes_a_missing_final_recap_then_runs_a_resume_turn(factory, server):
@@ -432,10 +433,10 @@ def test_events_reach_an_sse_stream_over_the_wire(factory, tmp_path):
 
 def test_the_web_bundle_is_served_at_root_without_shadowing_the_api(make_server, tmp_path):
     (tmp_path / "web").mkdir()
-    (tmp_path / "web" / "index.html").write_text("<!doctype html><title>Pi Dungeon Master</title>")
+    (tmp_path / "web" / "index.html").write_text("<!doctype html><title>D and Deez</title>")
     http = make_server(web_dir=tmp_path / "web").http
     r = http.get("/")
-    assert r.status_code == 200 and "<title>Pi Dungeon Master</title>" in r.text
+    assert r.status_code == 200 and "<title>D and Deez</title>" in r.text
     assert http.get("/health").json() == {"status": "ok"}
     assert http.get("/campaigns").json() == []
 
@@ -454,7 +455,7 @@ def test_root_is_absent_when_the_web_bundle_folder_is_missing(make_server, tmp_p
 
 
 def test_the_dev_clients_play_a_campaign_with_rolls_and_a_failed_turn(factory, tmp_path, monkeypatch):
-    monkeypatch.setenv("PIDM_FAKE_DELAY", "0")
+    monkeypatch.setenv("DND_FAKE_DELAY", "0")
     app = create_app(factory, turn_client=DevClaude("turn"), plan_client=DevClaude("plan"),
                      recap_client=DevClaude("recap"), backup_dir=tmp_path / "backups", inline=True)
     events = Events()
@@ -473,7 +474,7 @@ def test_the_dev_clients_play_a_campaign_with_rolls_and_a_failed_turn(factory, t
 
 
 def test_the_dev_clients_start_hurt_and_end_a_fight(factory, tmp_path, monkeypatch):
-    monkeypatch.setenv("PIDM_FAKE_DELAY", "0")
+    monkeypatch.setenv("DND_FAKE_DELAY", "0")
     app = create_app(factory, turn_client=DevClaude("turn"), plan_client=DevClaude("plan"),
                      recap_client=DevClaude("recap"), backup_dir=tmp_path / "backups", inline=True)
     http = TestClient(app)
@@ -496,7 +497,7 @@ def test_the_dev_clients_start_hurt_and_end_a_fight(factory, tmp_path, monkeypat
 
 
 def test_the_dev_plan_client_gives_each_regeneration_a_new_premise(factory, tmp_path, monkeypatch):
-    monkeypatch.setenv("PIDM_FAKE_DELAY", "0")
+    monkeypatch.setenv("DND_FAKE_DELAY", "0")
     app = create_app(factory, turn_client=DevClaude("turn"), plan_client=DevClaude("plan"),
                      recap_client=DevClaude("recap"), backup_dir=tmp_path / "backups", inline=True)
     http = TestClient(app)
@@ -593,3 +594,61 @@ def test_player_notes_are_per_campaign_survive_a_failed_turn_and_never_reach_cla
         assert "ferryman lies" not in str(request) and "Other story" not in str(request)
     assert server.http.get("/campaigns/999/notes").status_code == 404
     assert server.http.put("/campaigns/999/notes", json={"text": "x"}).status_code == 404
+
+
+def _dev_env(monkeypatch, tmp_path, **names):
+    """from_env with scripted clients, in an empty working directory."""
+    monkeypatch.chdir(tmp_path)
+    for k in ("DND_DB", "PIDM_DB"):
+        monkeypatch.delenv(k, raising=False)
+    monkeypatch.setenv("DND_FAKE_CLAUDE", "1")
+    monkeypatch.setenv("DND_FAKE_DELAY", "0")
+    monkeypatch.setenv("DND_BACKUP_DIR", str(tmp_path / "backups"))
+    for k, v in names.items():
+        monkeypatch.setenv(k, v)
+
+
+def _seed_campaign(path) -> None:
+    """One Campaign saved in the SQLite file at `path`."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    app = create_app(open_db(str(path)), turn_client=DevClaude("turn"), plan_client=DevClaude("plan"),
+                     recap_client=DevClaude("recap"), backup_dir=path.parent / "b", inline=True)
+    assert TestClient(app).post("/campaigns", json=SETUP).status_code == 202
+
+
+def _campaign_count(app) -> int:
+    return len(TestClient(app).get("/campaigns").json())
+
+
+def test_dnd_db_is_used_exactly(tmp_path, monkeypatch):
+    _dev_env(monkeypatch, tmp_path, DND_DB=str(tmp_path / "mine.sqlite"))
+    _seed_campaign(tmp_path / "mine.sqlite")
+    assert _campaign_count(from_env()) == 1
+    assert not (tmp_path / "data").exists()
+
+
+def test_pidm_db_alone_is_still_honored(tmp_path, monkeypatch):
+    _dev_env(monkeypatch, tmp_path, PIDM_DB=str(tmp_path / "old.sqlite"))
+    _seed_campaign(tmp_path / "old.sqlite")
+    assert _campaign_count(from_env()) == 1
+
+
+def test_dnd_db_wins_over_pidm_db(tmp_path, monkeypatch):
+    _dev_env(monkeypatch, tmp_path, DND_DB=str(tmp_path / "new.sqlite"), PIDM_DB=str(tmp_path / "old.sqlite"))
+    _seed_campaign(tmp_path / "old.sqlite")
+    assert _campaign_count(from_env()) == 0
+    assert (tmp_path / "new.sqlite").exists()
+
+
+def test_an_existing_legacy_database_is_opened_when_no_path_is_set(tmp_path, monkeypatch):
+    _dev_env(monkeypatch, tmp_path)
+    _seed_campaign(tmp_path / "data" / "pidm.sqlite")
+    assert _campaign_count(from_env()) == 1
+    assert not (tmp_path / "data" / "d-and-deez.sqlite").exists()
+
+
+def test_a_fresh_install_creates_the_new_default_database(tmp_path, monkeypatch):
+    _dev_env(monkeypatch, tmp_path)
+    assert _campaign_count(from_env()) == 0
+    assert (tmp_path / "data" / "d-and-deez.sqlite").exists()
+    assert not (tmp_path / "data" / "pidm.sqlite").exists()

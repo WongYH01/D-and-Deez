@@ -8,8 +8,8 @@ the class starting equipment (§9) plus the Acolyte's 15 gp.
 
 from __future__ import annotations
 
-from pidm import srd
-from pidm.models import Campaign, Character, InventoryItem, Skill, SpellSlot
+from d_and_deez import srd
+from d_and_deez.models import Campaign, Character, InventoryItem, Skill, SpellSlot
 
 _ACOLYTE_SKILLS = ["insight", "religion"]
 _ACOLYTE_GEAR = [("holy_symbol", 1), ("prayer_book", 1), ("stick_of_incense", 5), ("vestments", 1), ("common_clothes", 1)]

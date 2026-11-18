@@ -1,4 +1,4 @@
-"""Terminal loop: `pidm-play --template rogue --setting "dark fantasy" --tone grim`.
+"""Terminal loop: `d-and-deez-play --template rogue --setting "dark fantasy" --tone grim`.
 
 Sets up a Campaign (a generated bible, or `--bible PATH` to load a hand-written one), shows the
 spoiler-free premise, then plays Turns from stdin until the Campaign ends.
@@ -10,11 +10,13 @@ import argparse
 import os
 import sys
 
-from pidm.campaign import ATTEMPTS, Setup, SetupError, load_bible, retire, start_campaign
-from pidm.claude import AnthropicClient, plan_client
-from pidm.db import open_db
-from pidm.orchestrator import CampaignEnded, TurnOrchestrator
-from pidm.templates import TEMPLATES
+from d_and_deez.campaign import ATTEMPTS, Setup, SetupError, load_bible, retire, start_campaign
+from d_and_deez.claude import AnthropicClient, plan_client
+from d_and_deez import config
+from d_and_deez.config import env
+from d_and_deez.db import open_db
+from d_and_deez.orchestrator import CampaignEnded, TurnOrchestrator
+from d_and_deez.templates import TEMPLATES
 
 ENDINGS = {"victory": "Victory", "defeat": "Defeat", "fallen_hero": "Fallen hero", "retired": "Retired"}
 
@@ -72,7 +74,7 @@ def _setup(factory, args):
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(prog="pidm-play", description="Play Pi Dungeon Master in the terminal.")
+    ap = argparse.ArgumentParser(prog="d-and-deez-play", description="Play D and Deez in the terminal.")
     ap.add_argument("--template", choices=sorted(TEMPLATES), required=True)
     ap.add_argument("--name", help="Character name (default: the Template's)")
     ap.add_argument("--setting", default="high fantasy",
@@ -83,7 +85,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--veils", default="", help="Topics kept off-screen")
     ap.add_argument("--hook", default="", help="The Character's two-line backstory hook")
     ap.add_argument("--bible", metavar="PATH", help="Load a hand-written Campaign bible and skip generation")
-    ap.add_argument("--db", default=os.environ.get("PIDM_DB", "data/pidm.sqlite"), help="SQLite file")
+    ap.add_argument("--db", default=config.db_path(), help="SQLite file")
     args = ap.parse_args(argv)
 
     os.makedirs(os.path.dirname(os.path.abspath(args.db)), exist_ok=True)
@@ -96,8 +98,8 @@ def main(argv: list[str] | None = None) -> int:
     if sess is None:
         return 0
     session_id = sess.id
-    orch = TurnOrchestrator(factory, AnthropicClient(), round_cap=int(os.environ.get("PIDM_ROUND_CAP", "4")),
-                            context_budget=int(os.environ.get("PIDM_CONTEXT_BUDGET", "8000")))
+    orch = TurnOrchestrator(factory, AnthropicClient(), round_cap=int(env("ROUND_CAP", "4")),
+                            context_budget=int(env("CONTEXT_BUDGET", "8000")))
     print("Type your action and press Enter; 'retire' to end the Campaign, 'quit' to stop.\n")
     ended = []
     narration: list[str] = []  # held until the Turn ends: a round that calls tools discards what it streamed

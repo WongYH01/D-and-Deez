@@ -1,6 +1,6 @@
 from fastapi.testclient import TestClient
 
-from pidm.app import create_app
+from d_and_deez.app import create_app
 
 from conftest import FakeClaude
 

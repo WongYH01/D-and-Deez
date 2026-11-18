@@ -3,7 +3,7 @@ export function About() {
     <article className="space-y-4 font-serif leading-relaxed">
       <h1 className="font-heading text-2xl">About</h1>
       <p>
-        Pi Dungeon Master is a single-player, text-based tabletop adventure. Claude narrates; the app's code
+        D and Deez is a single-player, text-based tabletop adventure. Claude narrates; the app's code
         referees the rules and plans the story.
       </p>
       <h2 className="font-heading text-xl">System Reference Document</h2>
