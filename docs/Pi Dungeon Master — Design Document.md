@@ -338,7 +338,7 @@ Two screens: a setup wizard for new campaigns, and the play screen with the char
 - Equip and unequip are direct actions that skip Claude. They are disabled while a turn is running or an encounter is active; anything else is typed as an action.
 - On page load, `GET /log` restores the session's committed history; a turn still running appears when it commits.
 - Clocks appear in the sidebar only when the bible marks them visible (for example a public countdown); hidden clocks, the main clock included, stay secret.
-- During an encounter the sidebar lists the combatants in initiative order, marks whose turn it is, and shows each one's health as a word, never as numbers: unhurt (full HP), wounded (above half), bloodied (half or less) or down (dead or knocked out).
+- During an encounter the sidebar lists the Character and the Combatants in initiative order, marks whose turn it is, and shows each one's health as a word, never as numbers: unhurt (full HP), wounded (above half), bloodied (half or less) or down (dead or knocked out).
 - On `campaign_ended`, the log shows the epilogue and the sidebar offers New campaign. Carrying the character into a new campaign waits for the v2 character builder.
 - Header controls: Campaigns, End session (triggers the final recap), About (SRD attribution).
 - On a phone the log and action box fill the screen and the sheet opens as a drawer, one tap away.
@@ -357,7 +357,7 @@ The browser sends commands over plain HTTP and receives everything a turn produc
 | `POST /campaigns/{id}/regenerate` | Replace a `ready` campaign's bible with a new one | 202; status returns to `generating` |
 | `POST /campaigns/{id}/retire` | The player ends the campaign: Retired, no Claude call | 200; 409 while a turn is running |
 | `GET /campaigns` | List campaigns and their status | JSON |
-| `GET /state` | Sheet, conditions, inventory, quests, encounter, visible clocks, `running_turn_seq` | JSON; 404 if no session is open |
+| `GET /state` | Sheet, conditions, inventory, quests, encounter, visible clocks, `running_turn_seq` | JSON; 404 if no session is open. `encounter` is `null` outside a fight, else `{round, active, order: [{name, initiative, conditions, health}]}`: the Character and the Combatants in initiative order, `health` one of unhurt, wounded, bloodied, down. HP and AC are never sent |
 | `GET /log?session=<id>` | Committed turns and rolls for a session | JSON |
 | `POST /action` | Submit `{text}` for the open session | 202 with `turn_seq`; 409 if a turn is running or no session is open |
 | `GET /events` | The SSE stream | Events below |
