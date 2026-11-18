@@ -3,13 +3,16 @@ and inline work, driven through TestClient with a test subscriber on the broadca
 
 from __future__ import annotations
 
+import re
 import threading
 import time
+from pathlib import Path
 from types import SimpleNamespace
 
 import httpx
 import pytest
 import uvicorn
+from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
 from sqlalchemy import func, select
 
@@ -400,6 +403,13 @@ def test_the_web_bundle_is_served_at_root_without_shadowing_the_api(make_server,
     assert r.status_code == 200 and "<title>Pi Dungeon Master</title>" in r.text
     assert http.get("/health").json() == {"status": "ok"}
     assert http.get("/campaigns").json() == []
+
+
+def test_the_dev_server_proxies_every_api_path(server):
+    config = (Path(__file__).parents[1] / "src" / "web" / "vite.config.ts").read_text(encoding="utf-8")
+    proxied = set(re.findall(r'"(/[a-z]+)"', re.search(r"const api = \[(.*?)\]", config).group(1)))
+    served = {"/" + r.path.split("/")[1] for r in server.http.app.routes if isinstance(r, APIRoute)}
+    assert served == proxied
 
 
 def test_root_is_absent_when_the_web_bundle_folder_is_missing(make_server, tmp_path):

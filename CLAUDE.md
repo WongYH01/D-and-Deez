@@ -2,7 +2,7 @@
 
 Single-player, text-based D&D 5e web app. Claude narrates; the app's code referees rules and plans the story. Design: `docs/Pi Dungeon Master — Design Document.md`.
 
-Tests run on the host in the repo's venv: `.venv/Scripts/pytest` (Windows) or `.venv/bin/pytest`. The Docker image has no test dependencies. Web UI (`src/web`, React + Vite): `npm test` (Vitest) and `npm run dev` there.
+Tests run on the host in the repo's venv: `.venv/Scripts/pytest` (Windows) or `.venv/bin/pytest`. The Docker image has no test dependencies. Web UI (`src/web`, React + Vite): `npm test` (Vitest) and `npm run dev` there. Add UI components with `npx shadcn@4.23.0 add <name>` in `src/web`, then check `git status` from the repo root: the CLI edits files outside `src/web`.
 
 Tool registry: the `TOOLS` dict at the end of `src/pidm/tools.py`; story tools live in `src/pidm/story.py`. Test seams and `FakeClaude`: `tests/conftest.py` (seams listed in `CODING_STANDARDS.md`).
 
