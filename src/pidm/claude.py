@@ -68,8 +68,9 @@ class AnthropicClient:
         import anthropic
 
         # Tools stay in the request (stable prefix) but can't be called on the narration-only call.
-        tool_args = {"tools": tools, "tool_choice": {"type": "tool", "name": force_tool} if force_tool
-                     else {"type": "auto" if tools_enabled else "none"}} if tools else {}
+        # force_tool stays "auto": Sonnet 5.5 rejects forced tool_choice with a 400, so the system prompt names the
+        # tool and the caller retries when no call comes back.
+        tool_args = {"tools": tools, "tool_choice": {"type": "auto" if tools_enabled or force_tool else "none"}} if tools else {}
         try:
             with self.client.beta.messages.stream(
                 model=self.model,
