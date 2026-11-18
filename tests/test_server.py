@@ -157,6 +157,17 @@ def test_an_action_streams_rolls_and_narration_then_commits(server):
         ("Wren perception check", 99, "failure")]
 
 
+def test_the_log_shows_no_player_text_for_opening_and_resume_turns(server):
+    cid = create(server)
+    sid1 = start(server, cid)
+    server.recap.script.append(text("You landed on the Reed Shore."))
+    server.http.post("/session/end")
+    sid2 = start(server, cid, narration="Previously, you landed on the shore.")
+    act(server, "I wade ashore")
+    log1, log2 = (server.http.get(f"/log?session={s}").json() for s in (sid1, sid2))
+    assert [t["player_text"] for t in log1 + log2] == ["", "", "I wade ashore"]
+
+
 def test_a_failed_turn_changes_nothing_saves_a_failed_row_and_stays_out_of_the_log(factory, server):
     sid = start(server, create(server))
     before = server.http.get("/state").json()
