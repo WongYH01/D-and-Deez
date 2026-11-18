@@ -34,6 +34,8 @@ test("turn_done commits the Turn with its action, Roll lines and Narration", () 
       playerText: "I sneak behind the bar",
       rolls: [{ purpose: "Stealth", expr: "1d20+3", dice: [14], total: 17, target: 12, outcome: "success" }],
       narration: "Nobody sees you.",
+      prompt: null,
+      answered: 0,
       status: "committed",
     },
   ]);
@@ -56,6 +58,8 @@ test("error drops only that Turn's partial lines and keeps its action for Retry"
     playerText: "I touch the rune",
     rolls: [],
     narration: "",
+    prompt: null,
+    answered: 0,
     status: "failed",
     error: "The turn failed; nothing changed.",
   });
@@ -76,7 +80,7 @@ test("an error that beats POST /action's response leaves the Turn failed", () =>
     { type: "submitted", turn_seq: 6, text: "I touch the rune" },
   );
   expect(log.turns).toEqual([
-    { seq: 6, playerText: "I touch the rune", rolls: [], narration: "", status: "failed",
+    { seq: 6, playerText: "I touch the rune", rolls: [], narration: "", prompt: null, answered: 0, status: "failed",
       error: "The turn failed; nothing changed." },
   ]);
 });
@@ -145,4 +149,48 @@ test("events that arrive before POST /action returns land on the same Turn", () 
   expect(log.turns).toHaveLength(1);
   expect(log.turns[0]).toMatchObject({ playerText: "I climb", status: "running" });
   expect(log.turns[0].rolls).toHaveLength(1);
+});
+
+test("narration_discard drops the text streamed so far for that Turn only", () => {
+  const log = fold(
+    { type: "narration_delta", turn_seq: 5, text: "You hit! " },
+    { type: "narration_delta", turn_seq: 6, text: "Elsewhere." },
+    { type: "narration_discard", turn_seq: 5 },
+    { type: "narration_delta", turn_seq: 5, text: "The die settles." },
+  );
+  expect(log.turns.map((t) => [t.seq, t.narration])).toEqual([[5, "The die settles."], [6, "Elsewhere."]]);
+});
+
+const prompt = (turn_seq: number, n: number): LogAction => ({
+  type: "roll_prompt", turn_seq, n, purpose: "Wren perception check", bonus: 3, target: 12, versus: null, mode: "normal",
+});
+
+test("a roll_prompt holds the Turn's prompt until the Roll that answers it", () => {
+  const open = fold({ type: "submitted", turn_seq: 7, text: "I look" }, prompt(7, 0));
+  expect(open.turns[0].prompt).toMatchObject({ n: 0, bonus: 3 });
+  expect(isLocked(open, 7)).toBe(true);
+  const rolled = foldLog(open, { ...(roll(7, "Perception", 15) as object), answers_prompt: 0 } as LogAction);
+  expect(rolled.turns[0].prompt).toBeNull();
+  expect(rolled.turns[0].rolls).toHaveLength(1);
+  expect(rolled.turns[0].rolls[0]).not.toHaveProperty("answers_prompt");
+});
+
+test("a prompt that arrives after its answer (a stale GET /state) stays closed", () => {
+  const log = fold(
+    prompt(7, 0),
+    { type: "prompt_answered", turn_seq: 7, n: 0 },
+    prompt(7, 0),
+  );
+  expect(log.turns[0].prompt).toBeNull();
+  expect(foldLog(log, prompt(7, 1)).turns[0].prompt).toMatchObject({ n: 1 }); // the next prompt still opens
+});
+
+test("a Roll answering the prompt can beat the prompt itself", () => {
+  const log = fold({ ...(roll(7, "Perception", 15) as object), answers_prompt: 0 } as LogAction, prompt(7, 0));
+  expect(log.turns[0].prompt).toBeNull();
+});
+
+test("turn_done and error clear an open prompt", () => {
+  expect(fold(prompt(7, 0), { type: "turn_done", turn_seq: 7 }).turns[0].prompt).toBeNull();
+  expect(fold(prompt(7, 0), { type: "error", turn_seq: 7, message: "x" }).turns[0].prompt).toBeNull();
 });

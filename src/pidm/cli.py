@@ -33,8 +33,6 @@ def format_roll(p: dict) -> str:
 def emit(event: str, payload: dict) -> None:
     if event == "roll":
         print(format_roll(payload), flush=True)
-    elif event == "narration_delta":
-        print(payload["text"], end="", flush=True)
     elif event == "turn_done":
         print("\n", flush=True)
     elif event == "campaign_ended":
@@ -102,8 +100,20 @@ def main(argv: list[str] | None = None) -> int:
                             context_budget=int(os.environ.get("PIDM_CONTEXT_BUDGET", "8000")))
     print("Type your action and press Enter; 'retire' to end the Campaign, 'quit' to stop.\n")
     ended = []
+    narration: list[str] = []  # held until the Turn ends: a round that calls tools discards what it streamed
 
     def play(event: str, payload: dict) -> None:
+        if event == "narration_delta":
+            narration.append(payload["text"])
+        elif event == "narration_discard":
+            narration.clear()
+        elif event == "roll_prompt":
+            orch.answer_roll()  # the terminal has no Roll button: it rolls for the player
+        elif event == "turn_done":
+            print("".join(narration), end="", flush=True)
+            narration.clear()
+        elif event == "error":
+            narration.clear()  # the Turn was rolled back, so its partial text is never shown
         emit(event, payload)
         if event == "campaign_ended":
             ended.append(payload["ending"])

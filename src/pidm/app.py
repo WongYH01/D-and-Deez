@@ -29,7 +29,7 @@ from pidm import srd
 from pidm.campaign import Setup, build_campaign, clear_story, new_campaign, retire
 from pidm.claude import AnthropicClient, ClaudeClient, plan_client as make_plan_client, recap_client as make_recap_client
 from pidm.db import open_db
-from pidm.engine import hp_max, load_state
+from pidm.engine import hp_max, load_state, skill_list, speed
 from pidm.models import Campaign, Session, Turn
 from pidm.orchestrator import TurnOrchestrator, next_seq
 from pidm.prompts import OPENING, RESUME
@@ -103,6 +103,19 @@ class ActionIn(BaseModel):
     text: str = Field(min_length=1)
 
 
+class NotesIn(BaseModel):
+    text: str = Field(max_length=100_000)
+
+
+class RollIn(BaseModel):
+    turn_seq: int
+    n: int
+
+
+class AutoRollIn(BaseModel):
+    on: bool
+
+
 class SessionStartIn(BaseModel):
     campaign_id: int
 
@@ -121,10 +134,11 @@ def _conflict(message: str) -> HTTPException:
 
 def create_app(factory: sessionmaker, *, turn_client: ClaudeClient, plan_client: ClaudeClient,
                recap_client: ClaudeClient, backup_dir: str | Path, inline: bool = False, round_cap: int = 4,
-               context_budget: int = 8000, web_dir: str | Path | None = None) -> FastAPI:
+               context_budget: int = 8000, web_dir: str | Path | None = None, prompt_timeout: float = 600) -> FastAPI:
     app = FastAPI(title="Pi Dungeon Master")
     emit = app.state.broadcaster = Broadcaster()
-    orch = TurnOrchestrator(factory, turn_client, round_cap=round_cap, context_budget=context_budget)
+    orch = TurnOrchestrator(factory, turn_client, round_cap=round_cap, context_budget=context_budget,
+                            prompt_timeout=prompt_timeout)
     turns, jobs = Worker("turn", inline), Worker("job", inline)
     backup_dir = Path(backup_dir)
     # Held from an accepted request until its Turn ends, so a second action, a Session change or a direct
@@ -211,8 +225,11 @@ def create_app(factory: sessionmaker, *, turn_client: ClaudeClient, plan_client:
         snap = snapshot(state)
         snap["character"]["inventory"] = [{"id": i.id, "item": i.item_ref, "qty": i.qty, "equipped": i.equipped}
                                           for i in state.character.inventory]
+        snap["character"]["speed"] = speed(state.character)
+        snap["character"]["skill_list"] = skill_list(state.character)
         return {"session_id": sess.id, "campaign_id": sess.campaign_id, "campaign_name": sess.campaign.name,
-                "running_turn_seq": running["seq"], **snap,
+                "running_turn_seq": running["seq"], "pending_prompt": orch.pending,
+                "auto_roll": sess.campaign.auto_roll, **snap,
                 "encounter": encounter_json(state),  # after **snap: replaces the engine's view, which has HP and AC
                 "clocks": [{"name": c.name, "filled": c.filled, "segments": c.segments}
                            for c in sess.campaign.clocks if c.visible]}
@@ -285,6 +302,41 @@ def create_app(factory: sessionmaker, *, turn_client: ClaudeClient, plan_client:
             if sess is None:
                 raise HTTPException(404, "No Session is open.")
             return state_json(db, sess)
+
+    @app.post("/roll")
+    def roll(body: RollIn) -> dict:
+        """The player clicks Roll on the open Roll prompt `{turn_seq, n}`; the engine rolls and the Turn goes on."""
+        if not orch.answer_roll(body.turn_seq, body.n):
+            raise _conflict("No Roll prompt is open.")
+        return {}
+
+    def campaign_or_404(db, campaign_id: int) -> Campaign:
+        camp = db.get(Campaign, campaign_id)
+        if camp is None:
+            raise HTTPException(404, "No such Campaign.")
+        return camp
+
+    # Player notes and the Auto-roll setting are not game state: they commit on their own, even mid-Turn.
+    @app.get("/campaigns/{campaign_id}/notes")
+    def get_notes(campaign_id: int) -> dict:
+        with factory() as db:
+            return {"text": campaign_or_404(db, campaign_id).player_notes}
+
+    @app.put("/campaigns/{campaign_id}/notes")
+    def put_notes(campaign_id: int, body: NotesIn) -> dict:
+        with factory() as db:
+            campaign_or_404(db, campaign_id).player_notes = body.text
+            db.commit()
+        return {"text": body.text}
+
+    @app.put("/campaigns/{campaign_id}/auto_roll")
+    def put_auto_roll(campaign_id: int, body: AutoRollIn) -> dict:
+        with factory() as db:
+            campaign_or_404(db, campaign_id).auto_roll = body.on
+            db.commit()
+        if body.on:
+            orch.answer_roll(campaign_id=campaign_id)  # that Campaign's open prompt is answered at once
+        return {"auto_roll": body.on}
 
     @app.get("/log")
     def get_log(session: int) -> list[dict]:

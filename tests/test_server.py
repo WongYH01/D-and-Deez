@@ -540,3 +540,90 @@ def test_the_dev_plan_client_gives_each_regeneration_a_new_premise(factory, tmp_
     second = http.get("/campaigns").json()[0]["premise"]
     assert first == fixture_bible()["premise"]
     assert second == f"{first} (take 2)"
+
+
+# --- Roll prompts, the sheet, Player notes and Auto-roll (issue #26) -----------------------------------
+
+def manual_rolls(factory):
+    from conftest import set_auto_roll
+    set_auto_roll(factory, False)
+
+
+def post_in_thread(server, path, **body):
+    box = {}
+    t = threading.Thread(target=lambda: box.update(r=server.http.post(path, json=body)))
+    t.start()
+    return t, box
+
+
+def wait_for_event(server, kind):
+    end = time.time() + 5
+    while kind not in server.events.kinds():
+        assert time.time() < end, server.events.kinds()
+        time.sleep(0.01)
+
+
+def test_a_roll_prompt_holds_the_turn_until_the_roll_endpoint_answers_it(server, factory):
+    start(server, create(server))
+    manual_rolls(factory)
+    server.events.clear()
+    assert server.http.post("/roll", json={"turn_seq": 1, "n": 0}).status_code == 409  # nothing to answer
+    server.turn.script.extend([tool("skill_check", skill="perception", dc=12), text("A tripwire.")])
+    t, box = post_in_thread(server, "/action", text="I look")
+    wait_for_event(server, "roll_prompt")
+    state = server.http.get("/state").json()
+    prompt = state["pending_prompt"]
+    assert state["running_turn_seq"] == 1 and prompt["turn_seq"] == 1
+    assert (prompt["purpose"], prompt["bonus"], prompt["target"]) == ("Wren perception check", 3, 12)
+    assert server.http.post("/roll", json={"turn_seq": 1, "n": 1}).status_code == 409  # not the open prompt
+    assert server.http.post("/roll", json={"turn_seq": 1, "n": 0}).status_code == 200
+    t.join(5)
+    assert box["r"].status_code == 202
+    assert server.events.kinds() == ["roll_prompt", "roll", "narration_delta", "state_changed", "turn_done"]
+    state = server.http.get("/state").json()
+    assert state["pending_prompt"] is None and state["running_turn_seq"] is None
+
+
+def test_auto_roll_is_off_by_default_persists_and_answers_an_open_prompt(server, factory):
+    cid = create(server)
+    start(server, cid)
+    manual_rolls(factory)
+    assert server.http.get("/state").json()["auto_roll"] is False
+    server.turn.script.extend([tool("skill_check", skill="perception", dc=12), text("A tripwire.")])
+    t, _ = post_in_thread(server, "/action", text="I look")
+    wait_for_event(server, "roll_prompt")
+    assert server.http.put(f"/campaigns/{cid}/auto_roll", json={"on": True}).json() == {"auto_roll": True}
+    t.join(5)  # turning it on rolled for the player
+    assert "roll" in server.events.kinds() and server.http.get("/state").json()["auto_roll"] is True
+    assert server.http.put("/campaigns/999/auto_roll", json={"on": True}).status_code == 404
+
+
+def test_the_state_carries_the_sheet_fields_for_the_skills_tab(server):
+    start(server, create(server))  # Pip: Rogue 1, Dex 17, Wis 13, Expertise in Stealth, lightfoot halfling
+    ch = server.http.get("/state").json()["character"]
+    assert ch["speed"] == 25 and ch["proficiency_bonus"] == 2 and ch["ac"] == 14
+    assert ch["abilities"]["dex"] == {"score": 17, "mod": 3} and ch["saves"]["dex"] == 5
+    skills = {s["skill"]: s for s in ch["skill_list"]}
+    assert len(skills) == 18
+    assert skills["stealth"] == {"skill": "stealth", "ability": "dex", "bonus": 7, "proficient": True}  # 3 + 2 * 2
+    assert skills["athletics"]["bonus"] == -1 and skills["athletics"]["proficient"] is False
+    assert ch["features"]["sneak_attack"] == "1d6"
+
+
+def test_player_notes_are_per_campaign_survive_a_failed_turn_and_never_reach_claude(server):
+    a = create(server)
+    b = create(server)
+    start(server, a)
+    assert server.http.get(f"/campaigns/{a}/notes").json() == {"text": ""}
+    assert server.http.put(f"/campaigns/{a}/notes", json={"text": "The ferryman lies."}).status_code == 200
+    server.http.put(f"/campaigns/{b}/notes", json={"text": "Other story."})
+    server.turn.script.append(ClaudeError("overloaded"))
+    server.http.post("/action", json={"text": "I wait"})
+    assert server.events.kinds()[-1] == "error"
+    assert server.http.get(f"/campaigns/{a}/notes").json() == {"text": "The ferryman lies."}
+    assert server.http.get(f"/campaigns/{b}/notes").json() == {"text": "Other story."}
+    act(server, "I look around")
+    for request in server.turn.requests:
+        assert "ferryman lies" not in str(request) and "Other story" not in str(request)
+    assert server.http.get("/campaigns/999/notes").status_code == 404
+    assert server.http.put("/campaigns/999/notes", json={"text": "x"}).status_code == 404

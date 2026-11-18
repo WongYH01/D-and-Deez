@@ -82,7 +82,10 @@ def test_prose_in_a_tool_round_is_stripped_and_never_shown(factory, world):
     TurnOrchestrator(factory, claude, rng=scripted_rng([7])).run_turn(sid, "roll", ev)
     assistant = claude.requests[1]["messages"][-2]
     assert assistant["role"] == "assistant" and [b["type"] for b in assistant["content"]] == ["tool_use"]
-    assert [p["text"] for e, p in ev if e == "narration_delta"] == ["The die settles."]
+    # Every round streams; a round that turns out to call tools is discarded, so only the last stays.
+    assert [(e, p.get("text")) for e, p in ev if e.startswith("narration")] == [
+        ("narration_delta", "You hit!"), ("narration_discard", None), ("narration_delta", "The die settles.")]
+    assert ev[[e for e, _ in ev].index("narration_discard")][1] == {"turn_seq": 0}
 
 
 def test_tool_round_cap_forces_a_narration_only_call(factory, world):

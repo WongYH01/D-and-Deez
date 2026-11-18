@@ -14,7 +14,7 @@ from sqlalchemy import select
 from pidm import rules, srd
 from pidm.dice import DiceError, Roll, parse
 from pidm.engine import (
-    GameState, ToolError, add_condition, armor_class, can_act, change_exhaustion, character_check_modes,
+    GameState, ToolError, add_condition, armor_class, ask_roll, can_act, change_exhaustion, character_check_modes,
     check_bonus, d20_test, death_save, end_rage, equipped_armor, expire_conditions, has, heal_character,
     hp_max, hurt_character, hurt_combatant, incapacitated, lucky, m_check_bonus, m_mod, m_save_bonus, mod,
     passive_perception, prof, prone_rider, resolve_dying, ready_to_flee, remove_condition, resist_character, save_bonus,
@@ -335,6 +335,7 @@ def _character_save(state: GameState, ability: str, dc: int, purpose: str, *, ad
         dis = True  # §5 exhaustion 3
     if ability == "dex" and has(ch, "restrained"):
         dis = True  # §5 Restrained
+    ask_roll(state, purpose, save_bonus(ch, ability), dc, adv, dis)
     roll, _ = d20_test(state, save_bonus(ch, ability), purpose, advantage=adv, disadvantage=dis,
                        is_lucky=lucky(ch), target=dc)
     return {"success": roll.outcome == "success", "total": roll.total}
@@ -391,7 +392,9 @@ def t_skill_check(state: GameState, skill: str, dc: int, advantage: bool = False
     bonus, ability = check_bonus(ch, key)
     can_act(ch)
     adv, dis = character_check_modes(ch, ability, key)
-    roll, _ = d20_test(state, bonus, f"{ch.name} {key.replace('_', ' ')} check", advantage=adv or advantage,
+    purpose = f"{ch.name} {key.replace('_', ' ')} check"
+    ask_roll(state, purpose, bonus, dc, adv or advantage, dis or disadvantage)
+    roll, _ = d20_test(state, bonus, purpose, advantage=adv or advantage,
                        disadvantage=dis or disadvantage, is_lucky=lucky(ch), target=dc)
     return {"skill": key, "bonus": bonus, "total": roll.total, "dc": dc, "success": roll.outcome == "success"}
 
@@ -495,6 +498,10 @@ def t_contest(state: GameState, a: str, b: str, skill_a: str | None = None, skil
     bb, adv_b, dis_b, luck_b = _contest_bonus(state, who_b, skill_b)
     if enc is not None:
         _set_state(enc, economy=econ)
+    if who_a is state.character:  # one prompt, for the Character's side only
+        ask_roll(state, f"{who_a.name} {skill_a} (contest)", ba, None, adv_a, dis_a, versus=who_b.name)
+    elif who_b is state.character:
+        ask_roll(state, f"{who_b.name} {skill_b} (contest)", bb, None, adv_b, dis_b, versus=who_a.name)
     ra, _ = d20_test(state, ba, f"{who_a.name} {skill_a} (contest)", advantage=adv_a, disadvantage=dis_a, is_lucky=luck_a, record=False)
     rb, _ = d20_test(state, bb, f"{who_b.name} {skill_b} (contest)", advantage=adv_b, disadvantage=dis_b, is_lucky=luck_b, record=False)
     winner = who_a.name if ra.total > rb.total else who_b.name if rb.total > ra.total else None  # tie: no change (§2.2)
@@ -598,8 +605,9 @@ def t_attack(state: GameState, target: str, weapon: str, cover: str | None = Non
     cover_bonus = {"half": 2, "three_quarters": 5}.get(cover or "", 0)  # §4.17, R3
     ac = c.ac + cover_bonus
     crit_on = 19 if ch.char_class == "fighter" and ch.subclass == "champion" and ch.level >= 3 else 20  # §9.2
-    roll, nat = d20_test(state, bonus, f"{ch.name} attacks {c.name} with {ref.replace('_', ' ')}",
-                         advantage=adv, disadvantage=dis, is_lucky=lucky(ch), record=False)
+    purpose = f"{ch.name} attacks {c.name} with {ref.replace('_', ' ')}"
+    ask_roll(state, purpose, bonus, None, adv, dis, versus=c.name)  # AC stays hidden from the player
+    roll, nat = d20_test(state, bonus, purpose, advantage=adv, disadvantage=dis, is_lucky=lucky(ch), record=False)
     roll.target = ac
     hit = nat >= crit_on or (nat != 1 and roll.total >= ac)  # §4.9
     crit = hit and nat >= crit_on
