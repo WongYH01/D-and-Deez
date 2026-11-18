@@ -716,6 +716,131 @@ def t_heal(state: GameState, target: str, amount: str, temporary: bool = False) 
     return {"target": who.name, "healed": who.hp - before, "hp": who.hp}
 
 
+# --- spellcasting (R19) --------------------------------------------------------------
+
+_CASTING_ABILITY = {"wizard": "int", "cleric": "wis"}
+
+
+def _scaled(table: dict, key: int) -> str:
+    """The entry for the highest key not above `key` (cantrips scale by Character level, spells by slot level)."""
+    return table[str(max(int(k) for k in table if int(k) <= key))].replace(" ", "")
+
+
+def t_cast_spell(state: GameState, spell: str, targets: list | None = None, slot_level: int | None = None) -> dict:
+    ch = state.character
+    can_act(ch)
+    key = "-".join(spell.strip().lower().replace("_", " ").split())
+    known = ch.spells.get("cantrips", []) + ch.spells.get("prepared", [])
+    if key not in known:
+        raise ToolError(f"The Character can't cast {key!r}: not a cantrip or prepared spell. Castable: {', '.join(known) or 'none'}.")
+    data = state.db.get(SrdSpell, key).data
+    lvl = data["level"]
+    sl = max(lvl, slot_level or lvl)
+    slot = None
+    if lvl:
+        slot = next((s for s in ch.spell_slots if s.level == sl and s.used < s.max), None)
+        if slot is None:
+            raise ToolError(f"No level {sl} spell slot left. Slots: "
+                            + ", ".join(f"L{s.level} {s.max - s.used}/{s.max}" for s in ch.spell_slots) + ".")
+    enc = state.encounter
+    econ = None
+    if enc is not None:
+        # Casting time costs the Character's turn economy (R19); a reaction spell is cast on another creature's turn.
+        ct = data["casting_time"].lower()
+        if ct == "1 reaction":
+            econ = _econ(enc)
+            if econ["reaction_used"]:
+                raise ToolError("The Character has already used its reaction this round.")
+            econ["reaction_used"] = True
+        elif ct in ("1 action", "1 bonus action"):
+            _, econ = _require_turn(state)
+            (_use_action if ct == "1 action" else _use_bonus)(econ)
+        else:
+            raise ToolError(f"{data['name']} takes {data['casting_time']}: too long to cast in an Encounter.")
+
+    ab = _CASTING_ABILITY[ch.char_class]
+    atk = prof(ch) + mod(ch, ab)
+    dc = 8 + atk
+    dmg = next((d for d in data.get("damage") or [] if d.get("damage_type")), None)
+    table = dmg and (dmg.get("damage_at_character_level") or dmg.get("damage_at_slot_level"))
+    expr = table and _scaled(table, ch.level if "damage_at_character_level" in dmg else sl)
+    heal = data.get("heal_at_slot_level")
+    names = list(targets or [])
+    save_ab = (data.get("dc") or {}).get("dc_type", {}).get("index") if expr else None
+    attack = bool(data.get("attack_type")) and bool(expr)
+    if heal:
+        names = names[:1] or [CHARACTER]
+        if not _is_character(state, names[0]):
+            _combatant(state, names[0], alive=False)
+    elif expr:
+        if not names:
+            raise ToolError(f"{data['name']} needs targets: Combatant names, or 'character'.")
+        if not (attack or save_ab or data.get("area_of_effect")):
+            names = names[:1]  # shortcut: Magic Missile's darts can't be split across targets; upgrade if a playtest needs it.
+        who = [_target(state, n) for n in names]
+        if attack and state.character in who:
+            raise ToolError("A spell attack targets a Combatant.")
+    out: dict = {"spell": data["name"], "slot_level": sl if lvl else None, "spell_save_dc": dc, "spell_attack_bonus": atk}
+
+    if slot:
+        slot.used += 1
+    if heal:
+        out["healing"] = t_heal(state, names[0], _scaled(heal, sl).replace("+MOD", f"{mod(ch, ab):+d}"))
+    elif expr:
+        dtype, results = dmg["damage_type"]["index"], []
+        total = None if attack else max(0, state.dice.roll(expr, f"{ch.name} casts {data['name']} ({dtype})").total)
+        for c in who:
+            r: dict = {"target": c.name}
+            amount = total
+            if attack:
+                melee = data["range"] == "Touch"
+                adv = bool(ch.flags.get("hidden") or has(ch, "invisible")) or any(
+                    has(c, n) for n in ("blinded", "restrained", "paralyzed", "stunned", "unconscious", "petrified"))
+                dis = any(has(ch, n) for n in ("poisoned", "blinded", "prone", "restrained")) or ch.exhaustion >= 3
+                if has(c, "prone"):
+                    adv, dis = (adv or melee), (dis or not melee)  # §5 Prone with R1
+                dis = dis or has(c, "invisible")
+                # shortcut: skips Frightened and cover for spell attacks; add if a playtest needs them.
+                purpose = f"{ch.name} casts {data['name']} at {c.name}"
+                ask_roll(state, purpose, atk, None, adv, dis, versus=c.name)
+                roll, nat = d20_test(state, atk, purpose, advantage=adv, disadvantage=dis, is_lucky=lucky(ch), record=False)
+                roll.target = c.ac
+                hit = nat == 20 or (nat != 1 and roll.total >= c.ac)
+                crit = hit and (nat == 20 or (melee and (has(c, "paralyzed") or has(c, "unconscious"))))
+                roll.outcome = "critical hit" if crit else "hit" if hit else "miss"
+                state.dice.record(roll)
+                r.update(attack_total=roll.total, hit=hit, critical=crit)
+                if not hit:
+                    results.append(r)
+                    continue
+                dice, amount = state.dice.evaluate(expr, double_dice=crit)  # §4.20
+                amount = max(0, amount)
+                state.dice.record(Roll(f"{ch.name} {data['name']} damage" + (" (critical)" if crit else ""),
+                                       expr + (" (crit)" if crit else ""), dice, amount))
+            elif save_ab:
+                purpose = f"{c.name} {save_ab.upper()} save vs {data['name']}"
+                save = (_character_save(state, save_ab, dc, purpose) if c is state.character
+                        else _combatant_save(state, c, save_ab, dc, purpose))
+                r["save"] = save
+                if save["success"]:
+                    amount = amount // 2 if data["dc"]["dc_success"] == "half" else 0  # R11
+            if c is state.character:
+                r.update(hurt_character(state, resist_character(c, amount, dtype)))
+            else:
+                r.update(hurt_combatant(state, c, amount, dtype))
+            results.append(r)
+        out["results"] = results
+    else:
+        out["modelled"] = False  # the engine does not model this effect: Claude narrates it from the SRD text
+        out["description"] = " ".join(data["desc"])
+        if sl > lvl and data.get("higher_level"):
+            out["higher_level"] = " ".join(data["higher_level"])
+    if enc is not None:
+        _set_state(enc, economy=econ)
+    out["slots_left"] = {s.level: s.max - s.used for s in ch.spell_slots}
+    return out
+
+
 def t_set_condition(state: GameState, target: str, condition: str, on: bool = True, duration: int | None = None) -> dict:
     who = _target(state, target)
     cond = _condition_name(condition)
@@ -1198,6 +1323,8 @@ TOOLS: dict[str, tuple[Callable[..., dict], str, dict]] = {
                      _schema({"target": _TARGET, "amount": _S, "damage_type": _S, "critical": _B}, ["target", "amount", "damage_type"])),
     "heal": (t_heal, "Restore hit points (capped at max), or give temporary HP with temporary=true. amount is dice or a number.",
              _schema({"target": _TARGET, "amount": _S, "temporary": _B}, ["target", "amount"])),
+    "cast_spell": (t_cast_spell, "The Character casts a cantrip or prepared spell, spending a slot (slot_level, default the spell's level) for a leveled spell and the action, bonus action or reaction its casting time needs in an Encounter. The engine rolls spell attacks, save DCs, damage and healing. targets: Combatant names or 'character' (healing defaults to the Character). Effects the engine does not model (charm, invisibility, buffs) spend the slot and return the SRD text for you to narrate.",
+                   _schema({"spell": _S, "targets": {"type": "array", "items": _S}, "slot_level": _I}, ["spell"])),
     "set_condition": (t_set_condition, "Add (on=true) or remove (on=false) an SRD condition, with an optional duration in Combat rounds. Exhaustion changes by one level.",
                       _schema({"target": _TARGET, "condition": _S, "on": _B, "duration": _I}, ["target", "condition"])),
     "use_feature": (t_use_feature, "Use a class feature: 'rage' (frenzy=true for a Berserker's Frenzy), 'second_wind', or 'action_surge'.",

@@ -161,7 +161,7 @@ def test_invalid_call_changes_nothing(make_game):
                  {"target": "character", "amount": "5d", "damage_type": "fire"},
                  {"target": "character", "amount": 5, "damage_type": "fire"}):
         assert "error" in g.call("apply_damage", **args)
-    assert "Unknown tool" in g.call("cast_spell")["error"]
+    assert "Unknown tool" in g.call("polymorph")["error"]
     g.commit()
     assert g.ch.hp_current == 12 and g.dice.rolls == []
 
