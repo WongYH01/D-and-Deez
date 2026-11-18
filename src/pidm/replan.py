@@ -47,27 +47,31 @@ def _played(camp: Campaign) -> tuple[set[str], set[str], set[str]]:
             {c.slug for c in camp.clocks if c.is_main or c.filled > 0})
 
 
-def merge(current: dict, played: tuple[set[str], set[str], set[str]], proposal: Bible) -> dict:
-    """The `current` bible with its unplayed Beats, Clues and Clocks replaced by the proposal's."""
+def merge(current: dict, played: tuple[set[str], set[str], set[str]], from_act: int, proposal: Bible) -> dict:
+    """The `current` bible with its unplayed Beats (of Act `from_act` on), Clues and Clocks replaced by the proposal's."""
     resolved, revealed, kept_clocks = played
     new = copy.deepcopy(current)
     proposed = {a.slug: a for a in proposal.acts}
-    for act in new["acts"]:
-        # An Act the proposal drops keeps its open Beats.
-        fresh = [b.model_dump() for b in proposed[act["slug"]].beats] if act["slug"] in proposed else act["beats"]
+    for n, act in enumerate(new["acts"], 1):
+        # An Act the proposal drops, or one already past, keeps its Beats.
+        replanned = n >= from_act and act["slug"] in proposed
+        fresh = [b.model_dump() for b in proposed[act["slug"]].beats] if replanned else act["beats"]
         act["beats"] = [b for b in act["beats"] if b["slug"] in resolved] + [b for b in fresh if b["slug"] not in resolved]
-    new["clues"] = [c for c in new["clues"] if c["slug"] in revealed] +         [c.model_dump() for c in proposal.clues if c.slug not in revealed]
-    new["clocks"] = [c for c in new["clocks"] if c["slug"] in kept_clocks] +         [c.model_dump() for c in proposal.clocks if c.slug not in kept_clocks]
+    new["clues"] = ([c for c in new["clues"] if c["slug"] in revealed]
+                    + [c.model_dump() for c in proposal.clues if c.slug not in revealed])
+    new["clocks"] = ([c for c in new["clocks"] if c["slug"] in kept_clocks]
+                     + [c.model_dump() for c in proposal.clocks if c.slug not in kept_clocks])
     return new
 
 
-def _merged(current: dict, played: tuple[set[str], set[str], set[str]], length: str, data) -> tuple[Bible | None, list[str]]:
+def _merged(current: dict, played: tuple[set[str], set[str], set[str]], from_act: int, length: str,
+            data) -> tuple[Bible | None, list[str]]:
     """Merge a proposal (raw tool input) into the current bible and run the bible checks on the result."""
     try:
         proposal = Bible.model_validate(data)
     except ValidationError as e:
         return None, [f"{'.'.join(map(str, err['loc'])) or 'bible'}: {err['msg']}" for err in e.errors()]
-    return validate(merge(current, played, proposal), length)
+    return validate(merge(current, played, from_act, proposal), length)
 
 
 def _items(bible: dict) -> dict[str, dict]:
@@ -128,14 +132,14 @@ def replan(factory: sessionmaker, client: ClaudeClient, session_id: int) -> None
     with factory() as db:
         sess = db.get(Session, session_id)
         camp = sess.campaign
-        played = db.scalar(select(Turn.id).where(Turn.session_id == session_id, Turn.status == "committed",
+        acted = db.scalar(select(Turn.id).where(Turn.session_id == session_id, Turn.status == "committed",
                                                  Turn.player_text.not_in((OPENING, RESUME))).limit(1))
-        if camp.bible is None or camp.status != "active" or played is None:
+        if camp.bible is None or camp.status != "active" or acted is None:
             return  # no story left to adapt, or the player did nothing
         request, base = _request(camp, sess.final_recap or sess.rolling_recap), camp.bible_versions[-1].version
-        current, played, length = camp.bible, _played(camp), camp.length
+        current, played, act, length = camp.bible, _played(camp), camp.current_act, camp.length
     try:
-        bible = ask_bible(client, REPLAN_SYSTEM, request, REPLAN_TOOL, lambda data: _merged(current, played, length, data))
+        bible = ask_bible(client, REPLAN_SYSTEM, request, REPLAN_TOOL, lambda data: _merged(current, played, act, length, data))
     except Exception:
         log.exception("Replan after Session %s failed; keeping the current bible", session_id)
         return
@@ -160,7 +164,7 @@ def rollback(factory: sessionmaker, campaign_id: int, version: int) -> None:
         old = next((v for v in camp.bible_versions if v.version == version), None)
         if old is None:
             raise ValueError(f"Campaign {campaign_id} has no bible version {version}.")
-        merged, errors = _merged(camp.bible, _played(camp), camp.length, old.bible)
+        merged, errors = _merged(camp.bible, _played(camp), camp.current_act, camp.length, old.bible)
         if merged is None:
             raise ValueError(f"Version {version} no longer fits the story: {'; '.join(errors)}")
         new = merged.model_dump()

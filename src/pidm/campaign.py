@@ -127,7 +127,8 @@ def _seed(camp: Campaign, bible: Bible) -> None:
 def clear_story(camp: Campaign) -> None:
     """Remove a `ready` Campaign's bible, story rows and Character so a new bible can be generated."""
     camp.beats, camp.secrets, camp.clocks, camp.quests = [], [], [], []
-    camp.entities, camp.facts, camp.dm_notes, camp.bible_versions = [], [], [], []  # every table a Campaign owns must be listed here
+    # every table a Campaign owns must be listed here
+    camp.entities, camp.facts, camp.dm_notes, camp.bible_versions = [], [], [], []
     camp.character = None
     camp.name, camp.premise, camp.bible, camp.setup_error = "", "", None, ""
 
