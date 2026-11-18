@@ -419,11 +419,16 @@ def create_app(factory: sessionmaker, *, turn_client: ClaudeClient, plan_client:
 
 def from_env() -> FastAPI:
     """The real app: SQLite at PIDM_DB, backups in PIDM_BACKUP_DIR, the web bundle from PIDM_WEB_DIR, Claude clients
-    from the environment."""
+    from the environment, or scripted ones with PIDM_FAKE_CLAUDE=1 (pidm.devclaude)."""
     db_path = os.environ.get("PIDM_DB", "data/pidm.sqlite")
     os.makedirs(os.path.dirname(os.path.abspath(db_path)), exist_ok=True)
-    return create_app(open_db(db_path), turn_client=AnthropicClient(), plan_client=make_plan_client(),
-                      recap_client=make_recap_client(), backup_dir=os.environ.get("PIDM_BACKUP_DIR", "/backups"),
+    if os.environ.get("PIDM_FAKE_CLAUDE") == "1":
+        from pidm.devclaude import DevClaude
+        turn, plan, recap = DevClaude("turn"), DevClaude("plan"), DevClaude("recap")
+    else:
+        turn, plan, recap = AnthropicClient(), make_plan_client(), make_recap_client()
+    return create_app(open_db(db_path), turn_client=turn, plan_client=plan,
+                      recap_client=recap, backup_dir=os.environ.get("PIDM_BACKUP_DIR", "/backups"),
                       round_cap=int(os.environ.get("PIDM_ROUND_CAP", "4")),
                       context_budget=int(os.environ.get("PIDM_CONTEXT_BUDGET", "8000")),
                       web_dir=os.environ.get("PIDM_WEB_DIR", "src/web/dist"))

@@ -19,6 +19,7 @@ from sqlalchemy import func, select
 from pidm.app import create_app
 from pidm.campaign import PLAN_TOOL
 from pidm.claude import ClaudeError, Usage
+from pidm.devclaude import DevClaude
 from pidm.models import Campaign, Character, Session, Turn
 
 from conftest import Events, FakeClaude, fixture_bible, text, tool
@@ -427,3 +428,22 @@ def test_root_is_absent_when_the_web_bundle_folder_is_missing(make_server, tmp_p
     http = make_server(web_dir=tmp_path / "missing").http
     assert http.get("/").status_code == 404
     assert http.get("/health").json() == {"status": "ok"}
+
+
+def test_the_dev_clients_play_a_campaign_with_rolls_and_a_failed_turn(factory, tmp_path, monkeypatch):
+    monkeypatch.setenv("PIDM_FAKE_DELAY", "0")
+    app = create_app(factory, turn_client=DevClaude("turn"), plan_client=DevClaude("plan"),
+                     recap_client=DevClaude("recap"), backup_dir=tmp_path / "backups", inline=True)
+    events = Events()
+    app.state.broadcaster.subscribe(events)
+    http = TestClient(app)
+    cid = http.post("/campaigns", json=SETUP).json()["campaign_id"]
+    sid = http.post("/session/start", json={"campaign_id": cid}).json()["session_id"]
+    events.clear()
+    http.post("/action", json={"text": "I roll to search"})
+    assert events.kinds() == ["roll", "narration_delta", "state_changed", "turn_done"]
+    events.clear()
+    http.post("/action", json={"text": "I fail on purpose"})
+    assert events.kinds() == ["error"]
+    assert [t["player_text"] for t in http.get(f"/log?session={sid}").json()] == ["", "I roll to search"]
+    assert http.post("/session/end").status_code == 202

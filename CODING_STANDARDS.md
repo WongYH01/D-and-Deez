@@ -27,3 +27,7 @@ Tools change ORM objects loaded for the Turn; only the orchestrator commits a Tu
 ## Engine tests use the four seams
 
 Tests call tools through `dispatch` with scripted dice (Seam 1), run the orchestrator with a fake Claude client (Seam 2), start a Campaign through `start_campaign` with a fake Claude client that returns bible tool calls (Seam 3), or drive the HTTP API through `TestClient` on an app built by `create_app` with fake Claude clients, a temporary database and backups folder, `inline` work and a test subscriber on the broadcaster (Seam 4). Expected numbers come from the SRD text or worked dice, never recomputed the way the code does. A test of a rule names the section or ruling it covers.
+
+## UI state tolerates any arrival order
+
+The browser sees events, HTTP responses and fetches in whatever order the network delivers them: an event can beat the `POST /action` response that started its Turn, a `GET /state` or `GET /log` response can land after later events, and a reconnect misses events. Trace each change to `src/web` through every order; a reducer test covers each order the code relies on. A state that one unlucky order leaves stuck (input locked forever, a Turn's lines lost) is a finding.
