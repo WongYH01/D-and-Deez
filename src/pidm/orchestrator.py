@@ -17,9 +17,13 @@ from sqlalchemy.orm import sessionmaker
 from pidm.claude import ClaudeClient, Reply, Usage
 from pidm.dice import Dice
 from pidm.engine import load_state
+from pidm.memory import HOPS, memory_blocks
 from pidm.models import Campaign, RollRecord, Session, Turn
 from pidm.prompts import OPENING, RESUME, system_prompt, user_message
 from pidm.recap import recap_block
+from pidm.scenes import end_overlong_scene
+from pidm.sources import location_text
+from pidm.recall import Embedder, recall
 from pidm.rules import retrieve
 from pidm.story import director_block, end, ending_met
 from pidm.tools import dispatch, snapshot, tool_definitions
@@ -61,13 +65,17 @@ def _tokens(chars: int) -> int:
     return chars // 4
 
 
+def _size(history: list[dict], context: str) -> int:
+    return len(context) + sum(len(m["content"]) for m in history)
+
+
 def trim_history(history: list[dict], context: str, budget: int) -> list[dict]:
     """Drop the oldest action and Narration pairs until the history plus the dynamic context fits the budget.
 
     The context (state snapshot, Director block, recap block, Rule sections) is never cut; `retrieve` already
-    caps Rule sections at two, so the oldest pairs are the only thing left to drop in v1.
+    caps Rule sections at two and `_run` has already dropped recall and far Facts, so the oldest pairs are last.
     """
-    size = len(context) + sum(len(m["content"]) for m in history)
+    size = _size(history, context)
     while history and _tokens(size) > budget:
         size -= len(history[0]["content"]) + len(history[1]["content"])
         history = history[2:]
@@ -77,13 +85,14 @@ def trim_history(history: list[dict], context: str, budget: int) -> list[dict]:
 class TurnOrchestrator:
     def __init__(self, factory: sessionmaker, client: ClaudeClient, *, round_cap: int = 4,
                  history_turns: int = 8, context_budget: int = 8000, rng: Callable[[int], int] | None = None,
-                 prompt_timeout: float = 600):
+                 prompt_timeout: float = 600, embedder: Embedder | None = None):
         self.factory = factory
         self.client = client
         self.round_cap = round_cap
         self.history_turns = history_turns
         self.context_budget = context_budget
         self.rng = rng
+        self.embedder = embedder  # None: no Scene recall
         self.prompt_timeout = prompt_timeout  # seconds an unanswered Roll prompt waits before it auto-rolls
         self._lock = threading.Lock()
         self._answered = threading.Event()
@@ -168,9 +177,23 @@ class TurnOrchestrator:
             # Tool rounds of this Turn reread the dynamic context from the cache.
             system = [{"type": "text", "text": system_prompt(state.campaign), "cache_control": CACHE}]
             tools = tool_definitions()
-            context = user_message(snapshot(state), player_text, retrieve(db, player_text), director_block(state),
-                                   recap_block(db, state.session))
-            history = trim_history(self._history(db, campaign_id), context, self.context_budget)
+            past = self._history(db, campaign_id)
+            # The action and the last two Narrations name the Entities whose Facts Claude needs.
+            seen = [player_text] + [m["content"] for m in past[-4:] if m["role"] == "assistant"]
+
+            def build(hops: int, scenes: list[str]) -> str:
+                world, notes = memory_blocks(state, seen, hops)
+                camp = state.campaign
+                source = location_text(db, camp.source_id, camp.current_location) if camp.source_id else None
+                return user_message(snapshot(state), player_text, retrieve(db, player_text), director_block(state),
+                                    recap_block(db, state.session), world, notes, scenes, source)
+
+            scenes = recall(self.factory, self.embedder, campaign_id, player_text)  # inline; never fails the Turn
+            context = build(HOPS, scenes)
+            if _tokens(_size(past, context)) > self.context_budget:
+                # Memory strategy: Scene recall and Facts more than one hop away go before recent Turns do.
+                context = build(1, [])
+            history = trim_history(past, context, self.context_budget)
             messages = history + [{"role": "user", "content": [{"type": "text", "text": context,
                                                                 "cache_control": CACHE}]}]
             narration = None
@@ -198,6 +221,7 @@ class TurnOrchestrator:
                                          on_text=lambda t: emit("narration_delta", {"turn_seq": seq, "text": t}))
                 usage.add(reply.usage)
                 narration = text_of(reply)
+            end_overlong_scene(state)
             if ending_met(state) == "defeat":
                 end(state.campaign, "defeat")  # Claude skipped end_campaign on a full Main clock
             turn = Turn(session_id=session_id, seq=seq, player_text=player_text, narration=narration,

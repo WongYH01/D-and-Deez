@@ -10,6 +10,11 @@ export type CampaignView = {
   premise: string | null;
   ending: string | null;
   setup_error: string;
+  adapted: boolean;
+  /** Set for an imported adventure: its counts and warnings, never the plan or the text. */
+  source_id: number | null;
+  summary: { acts: number; npcs: number; locations: number } | null;
+  warnings: string[];
 };
 
 /** The server's refusal (a 404 or 409 `detail`) as a readable message. */
@@ -86,6 +91,7 @@ export function Campaigns() {
                   {c.status} · {c.length}
                   {c.ending && ` · ${c.ending}`}
                 </p>
+                {c.adapted && <p className="text-sm text-muted-foreground">The story adapted.</p>}
                 {c.status === "failed" && c.setup_error && (
                   <p className="text-sm text-destructive">{c.setup_error}</p>
                 )}

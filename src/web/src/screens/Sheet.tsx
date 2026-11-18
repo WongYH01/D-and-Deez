@@ -24,6 +24,8 @@ export type Character = {
   saves: Record<string, number>;
   skill_list: { skill: string; ability: string; bonus: number; proficient: boolean }[];
   features: Record<string, string | number>;
+  /** Empty for a non-caster. */
+  spell_slots: { level: number; used: number; max: number }[];
 };
 
 export type Quest = { id: number; title: string; status: string; notes: string[] };
@@ -95,6 +97,19 @@ function Status({ c }: { c: Character }) {
         <span className="text-muted-foreground">Conditions: </span>
         {c.conditions.length ? c.conditions.join(", ") : "none"}
       </p>
+      {c.spell_slots.length > 0 && (
+        <section>
+          <h3 id="spell-slots" className="text-muted-foreground">Spell slots</h3>
+          <ul aria-labelledby="spell-slots" className="mt-1 space-y-0.5">
+            {c.spell_slots.map((s) => (
+              <li key={s.level} className="flex justify-between gap-2">
+                <span>Level {s.level}</span>
+                <span>{s.used} used / {s.max}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
     </>
   );
 }

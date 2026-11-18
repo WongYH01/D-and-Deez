@@ -2,7 +2,7 @@
 
 `create_app` builds the app from injected parts (Seam 4); `from_env` builds it with real Claude clients for
 uvicorn (`uvicorn pidm.app:from_env --factory`). Turns, opening Turns and resume Turns run on the turn thread;
-bible generation, Recaps and backups run in order on the job thread (ADR 0001). With `inline`, both run on
+bible generation, Recaps, replans and backups run in order on the job thread (ADR 0001). With `inline`, both run on
 the request thread before the response returns.
 """
 
@@ -21,7 +21,7 @@ from typing import Callable, Literal
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import func, select
 from sqlalchemy.orm import sessionmaker
 
@@ -30,16 +30,21 @@ from pidm.campaign import Setup, build_campaign, clear_story, new_campaign, reti
 from pidm.claude import AnthropicClient, ClaudeClient, plan_client as make_plan_client, recap_client as make_recap_client
 from pidm.db import open_db
 from pidm.engine import hp_max, load_state, skill_list, speed
-from pidm.models import Campaign, Session, Turn
+from pidm.models import Campaign, Scene, Session, Source, Turn
 from pidm.orchestrator import TurnOrchestrator, next_seq
 from pidm.prompts import OPENING, RESUME
+from pidm.recall import DEFAULT_MODEL, Embedder, FastEmbedder, embed_scene, reembed_stale
+from pidm.scenes import write_scene_summary
+from pidm.replan import replan
 from pidm.recap import ROLLING_EVERY, write_final_recap, write_rolling_recap
+from pidm.sources import PARTY_WARNING, SourceError, delete_source, store_source
 from pidm.templates import TEMPLATES
 from pidm.tools import snapshot
 
 log = logging.getLogger("pidm.server")
 
 Emit = Callable[[str, dict], None]
+MAX_UPLOAD_BYTES = 50_000_000
 
 
 class Broadcaster:
@@ -89,14 +94,22 @@ class Worker:
 
 
 class CampaignIn(BaseModel):
-    setting: str = Field(min_length=1)
-    tone: str = Field(min_length=1)
-    length: Literal["one-shot", "short"]
+    # An imported adventure (`source_id`) brings its own setting, tone and length.
+    setting: str = ""
+    tone: str = ""
+    length: Literal["one-shot", "short"] = "one-shot"
     template: Literal[tuple(TEMPLATES)]  # type: ignore[valid-type]
     character_name: str = ""
     hook: str = ""
     lines: str = ""
     veils: str = ""
+    source_id: int | None = None
+
+    @model_validator(mode="after")
+    def _generated_needs_setting_and_tone(self):
+        if self.source_id is None and not (self.setting and self.tone):
+            raise ValueError("setting and tone are required")
+        return self
 
 
 class ActionIn(BaseModel):
@@ -120,6 +133,15 @@ class SessionStartIn(BaseModel):
     campaign_id: int
 
 
+def import_review(camp: Campaign) -> dict:
+    """What the player sees of an imported adventure: counts and warnings, never the plan or the text."""
+    if not camp.source_id or camp.bible is None:
+        return {"summary": None, "warnings": []}
+    b = camp.bible
+    return {"summary": {"acts": len(b["acts"]), "npcs": len(b["npcs"]), "locations": len(b["locations"])},
+            "warnings": [PARTY_WARNING]}
+
+
 def _open_session(db) -> Session | None:
     return db.scalar(select(Session).where(Session.ended_at.is_(None)))
 
@@ -134,13 +156,14 @@ def _conflict(message: str) -> HTTPException:
 
 def create_app(factory: sessionmaker, *, turn_client: ClaudeClient, plan_client: ClaudeClient,
                recap_client: ClaudeClient, backup_dir: str | Path, inline: bool = False, round_cap: int = 4,
-               context_budget: int = 8000, web_dir: str | Path | None = None, prompt_timeout: float = 600) -> FastAPI:
+               context_budget: int = 8000, web_dir: str | Path | None = None, prompt_timeout: float = 600,
+               embedder: Embedder | None = None, sources_dir: str | Path = "data/sources") -> FastAPI:
     app = FastAPI(title="Pi Dungeon Master")
     emit = app.state.broadcaster = Broadcaster()
     orch = TurnOrchestrator(factory, turn_client, round_cap=round_cap, context_budget=context_budget,
-                            prompt_timeout=prompt_timeout)
+                            prompt_timeout=prompt_timeout, embedder=embedder)
     turns, jobs = Worker("turn", inline), Worker("job", inline)
-    backup_dir = Path(backup_dir)
+    backup_dir, sources_dir = Path(backup_dir), Path(sources_dir)
     # Held from an accepted request until its Turn ends, so a second action, a Session change or a direct
     # action is refused with 409 instead of queueing behind it.
     busy = threading.Lock()
@@ -150,6 +173,9 @@ def create_app(factory: sessionmaker, *, turn_client: ClaudeClient, plan_client:
         for camp in db.scalars(select(Campaign).where(Campaign.status == "generating")):
             camp.status, camp.setup_error = "failed", "The server restarted while the bible was being generated."
         db.commit()
+
+    if embedder:  # on the job thread, so loading the model never delays startup
+        jobs.submit(reembed_stale, factory, embedder)
 
     # --- shared paths ---------------------------------------------------------------------
 
@@ -168,6 +194,7 @@ def create_app(factory: sessionmaker, *, turn_client: ClaudeClient, plan_client:
 
     def close_job(session_id: int) -> None:
         write_final_recap(factory, recap_client, session_id)
+        replan(factory, plan_client, session_id)
         backup(session_id)
 
     def close_session(db, sess: Session) -> None:
@@ -184,6 +211,11 @@ def create_app(factory: sessionmaker, *, turn_client: ClaudeClient, plan_client:
                               .where(Turn.session_id == session_id, Turn.status == "committed"))
             if count % ROLLING_EVERY == 0:
                 jobs.submit(write_rolling_recap, factory, recap_client, session_id, count)
+            for scene_id in db.scalars(select(Scene.id).where(Scene.session_id == session_id,
+                                                               Scene.end_turn == turn.seq)):
+                jobs.submit(write_scene_summary, factory, recap_client, scene_id)
+                if embedder:
+                    jobs.submit(embed_scene, factory, embedder, scene_id)
             sess = db.get(Session, session_id)
             if sess.campaign.status == "complete" and sess.ended_at is None:
                 close_session(db, sess)  # an Ending closes the Session
@@ -240,12 +272,48 @@ def create_app(factory: sessionmaker, *, turn_client: ClaudeClient, plan_client:
     def health() -> dict[str, str]:
         return {"status": "ok"}
 
+    @app.post("/sources")
+    async def upload_source(request: Request, filename: str) -> dict:
+        """Import step 1: the raw file as the body. Its text is extracted and stored locally; the id goes to
+        `POST /campaigns` as `source_id`. A bad upload is a 400 with the reason."""
+        data = await request.body()
+        if len(data) > MAX_UPLOAD_BYTES:
+            raise HTTPException(413, "That file is too large to import.")
+        try:
+            return {"source_id": store_source(factory, sources_dir, filename, data)}
+        except SourceError as e:
+            raise HTTPException(400, str(e)) from e
+
+    @app.delete("/sources/{source_id}")
+    def cancel_source(source_id: int) -> dict:
+        """Cancelling an import deletes the source and its unplayed Campaign; a Campaign being played keeps it."""
+        with factory() as db:
+            camps = db.scalars(select(Campaign).where(Campaign.source_id == source_id)).all()
+            if db.get(Source, source_id) is None:
+                raise HTTPException(404, "No such source.")
+            if any(c.status not in ("ready", "failed") for c in camps):
+                raise _conflict("This adventure is in use by a Campaign.")
+            for c in camps:
+                db.delete(c)
+            db.commit()
+        delete_source(factory, source_id)
+        return {}
+
     @app.post("/campaigns", status_code=202)
     def create_campaign(body: CampaignIn) -> dict:
+        if body.source_id is not None:
+            with factory() as db:
+                if db.get(Source, body.source_id) is None:
+                    raise HTTPException(404, "No such source.")
+                if db.scalar(select(Campaign.id).where(Campaign.source_id == body.source_id)) is not None:
+                    raise _conflict("This adventure already has a Campaign.")
+            body.setting = body.setting or "As the adventure is written"
+            body.tone = body.tone or "As the adventure is written"
         setup = Setup(setting=body.setting, tone=body.tone, length=body.length, lines=body.lines, veils=body.veils,
                       hook=body.hook)
         with factory() as db:
             camp = new_campaign(setup, body.template, body.character_name, "generating")
+            camp.source_id = body.source_id
             db.add(camp)
             db.commit()
             cid = camp.id
@@ -257,7 +325,9 @@ def create_app(factory: sessionmaker, *, turn_client: ClaudeClient, plan_client:
         with factory() as db:
             return [{"id": c.id, "name": c.name, "status": c.status, "length": c.length,
                      "premise": c.premise if c.status in ("ready", "active", "complete") else None,
-                     "ending": c.ending, "setup_error": c.setup_error}
+                     "ending": c.ending, "setup_error": c.setup_error,
+                     "adapted": len(c.bible_versions) > 1,  # a flag only: the diff stays server-side
+                     "source_id": c.source_id, **import_review(c)}
                     for c in db.scalars(select(Campaign).order_by(Campaign.id))]
 
     @app.post("/campaigns/{campaign_id}/regenerate", status_code=202)
@@ -498,10 +568,14 @@ def from_env() -> FastAPI:
     if os.environ.get("PIDM_FAKE_CLAUDE") == "1":
         from pidm.devclaude import DevClaude
         turn, plan, recap = DevClaude("turn"), DevClaude("plan"), DevClaude("recap")
+        embedder = None  # no model download in dev
     else:
         turn, plan, recap = AnthropicClient(), make_plan_client(), make_recap_client()
+        embedder = FastEmbedder(os.environ.get("PIDM_EMBED_MODEL", DEFAULT_MODEL))
     return create_app(open_db(db_path), turn_client=turn, plan_client=plan,
-                      recap_client=recap, backup_dir=os.environ.get("PIDM_BACKUP_DIR", "/backups"),
+                      recap_client=recap, embedder=embedder,
+                      sources_dir=os.environ.get("PIDM_SOURCES_DIR", os.path.join(os.path.dirname(os.path.abspath(db_path)), "sources")),
+                      backup_dir=os.environ.get("PIDM_BACKUP_DIR", "/backups"),
                       round_cap=int(os.environ.get("PIDM_ROUND_CAP", "4")),
                       context_budget=int(os.environ.get("PIDM_CONTEXT_BUDGET", "8000")),
                       web_dir=os.environ.get("PIDM_WEB_DIR", "src/web/dist"))

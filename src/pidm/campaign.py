@@ -8,17 +8,21 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from typing import Callable
 
 from sqlalchemy.orm import sessionmaker
 
 from pidm.bible import ACTS, Bible, validate
 from pidm.claude import ClaudeClient
-from pidm.models import Beat, Campaign, Clock, Clue, Secret, Session
+from pidm.memory import seed_entities
+from pidm.models import Beat, BibleVersion, Campaign, Clock, Clue, Secret, Session
+from pidm.sources import IMPORT_SYSTEM, full_text, tag_chunks
 from pidm.story import end
 from pidm.templates import create_character
 
 PLAN_TOOL = "write_campaign_bible"
 ATTEMPTS = 3
+IMPORTED = "imported"  # Campaign.length of an imported adventure: it has no chosen length
 
 
 class SetupError(Exception):
@@ -64,19 +68,21 @@ def _request(setup: Setup) -> str:
             f"Character backstory hook: {setup.hook or 'none'}")
 
 
-def _generate(client: ClaudeClient, setup: Setup) -> Bible:
-    tools = [{"name": PLAN_TOOL, "description": "Submit the complete Campaign bible.",
+def ask_bible(client: ClaudeClient, system: str, request: str, tool: str,
+              accept: Callable[[object], tuple[Bible | None, list[str]]]) -> Bible:
+    """Ask for a bible through `tool`, feeding `accept`'s errors back up to ATTEMPTS times."""
+    tools = [{"name": tool, "description": "Submit the complete Campaign bible.",
               "input_schema": Bible.model_json_schema()}]
-    messages: list[dict] = [{"role": "user", "content": _request(setup)}]
+    messages: list[dict] = [{"role": "user", "content": request}]
     errors: list[str] = []
     for _ in range(ATTEMPTS):
-        reply = client.send(system=PLAN_SYSTEM, messages=messages, tools=tools, tools_enabled=True, on_text=None,
-                            force_tool=PLAN_TOOL)
-        call = next((b for b in reply.content if b["type"] == "tool_use" and b["name"] == PLAN_TOOL), None)
-        bible, errors = validate(call["input"] if call else None, setup.length)
+        reply = client.send(system=system, messages=messages, tools=tools, tools_enabled=True, on_text=None,
+                            force_tool=tool)
+        call = next((b for b in reply.content if b["type"] == "tool_use" and b["name"] == tool), None)
+        bible, errors = accept(call["input"] if call else None)
         if bible:
             return bible
-        feedback = "The bible failed these checks; call write_campaign_bible again with a corrected bible:\n- " + \
+        feedback = f"The bible failed these checks; call {tool} again with a corrected bible:\n- " + \
             "\n- ".join(errors)
         # The API wants a tool_result for every tool_use in the reply, and the model may call the tool more than once.
         results = [{"type": "tool_result", "tool_use_id": b["id"], "content": feedback, "is_error": True}
@@ -84,6 +90,18 @@ def _generate(client: ClaudeClient, setup: Setup) -> Bible:
         messages = messages + [{"role": "assistant", "content": reply.content},
                                {"role": "user", "content": results or feedback}]
     raise SetupError(f"No valid Campaign bible after {ATTEMPTS} attempts: {'; '.join(errors)}")
+
+
+def _generate(client: ClaudeClient, setup: Setup) -> Bible:
+    return ask_bible(client, PLAN_SYSTEM, _request(setup), PLAN_TOOL, lambda data: validate(data, setup.length))
+
+
+def _import(client: ClaudeClient, body: str, setup: Setup) -> Bible:
+    """Convert an adventure's text to a bible; the length is the adventure's own (1 to 3 Acts)."""
+    request = (f"Lines (never shown): {setup.lines or 'none'}\nVeils (off-screen only): {setup.veils or 'none'}\n"
+               f"Character backstory hook for the opening scene: {setup.hook or 'none'}\n\n"
+               f"<adventure>\n{body}\n</adventure>")
+    return ask_bible(client, IMPORT_SYSTEM, request, PLAN_TOOL, lambda data: validate(data, IMPORTED))
 
 
 def new_campaign(setup: Setup, template: str, name: str | None, status: str) -> Campaign:
@@ -101,6 +119,7 @@ def setup_of(camp: Campaign) -> Setup:
 def _seed(camp: Campaign, bible: Bible) -> None:
     """Fill a Campaign row with its bible, story tables and Character."""
     camp.name, camp.premise, camp.bible = bible.title, bible.premise, bible.model_dump()
+    camp.bible_versions.append(BibleVersion(version=1, bible=camp.bible))
     camp.current_act, camp.current_location, camp.last_progress_turn = 1, bible.start_location, 0
     acts = {a.slug: n for n, a in enumerate(bible.acts, 1)}
     for n, act in enumerate(bible.acts, 1):
@@ -111,12 +130,15 @@ def _seed(camp: Campaign, bible: Bible) -> None:
             for c in bible.clues if c.secret == s.slug]))
     camp.clocks += [Clock(slug=c.slug, name=c.name, segments=c.segments, filled=0, consequence=c.consequence,
                           is_main=c.main, visible=c.visible) for c in bible.clocks]
+    seed_entities(camp, bible)
     create_character(camp, camp.template, camp.character_name or None)
 
 
 def clear_story(camp: Campaign) -> None:
     """Remove a `ready` Campaign's bible, story rows and Character so a new bible can be generated."""
     camp.beats, camp.secrets, camp.clocks, camp.quests = [], [], [], []
+    # every table a Campaign owns must be listed here
+    camp.entities, camp.facts, camp.dm_notes, camp.bible_versions = [], [], [], []
     camp.character = None
     camp.name, camp.premise, camp.bible, camp.setup_error = "", "", None, ""
 
@@ -145,9 +167,11 @@ def build_campaign(factory: sessionmaker, client: ClaudeClient, campaign_id: int
     The Claude calls run outside any transaction; any failure leaves the Campaign `failed` with its error.
     """
     with factory() as db:
-        setup = setup_of(db.get(Campaign, campaign_id))
+        camp = db.get(Campaign, campaign_id)
+        setup, source_id = setup_of(camp), camp.source_id
+        body = full_text(db, source_id) if source_id else ""
     try:
-        bible = _generate(client, setup)
+        bible = _import(client, body, setup) if source_id else _generate(client, setup)
         error = None
     except Exception as e:  # SetupError, or a Claude API error after retries
         bible, error = None, str(e) or type(e).__name__
@@ -157,6 +181,9 @@ def build_campaign(factory: sessionmaker, client: ClaudeClient, campaign_id: int
             camp.status, camp.setup_error = "failed", error
         else:
             _seed(camp, bible)
+            if source_id:
+                camp.length = IMPORTED
+                tag_chunks(db, source_id, bible)
             db.add(camp.character)  # SQLAlchemy 2 does not cascade the backref into the open session
             camp.status = "ready"
         db.commit()

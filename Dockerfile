@@ -21,6 +21,10 @@ WORKDIR /app
 COPY pyproject.toml ./
 RUN mkdir -p src/pidm && touch src/pidm/__init__.py && pip install . && rm -rf src build
 
+# Bake the embedding model in (ADR 0005); the app user only reads it.
+ENV FASTEMBED_CACHE_PATH=/opt/fastembed
+RUN python -c "from fastembed import TextEmbedding; TextEmbedding('BAAI/bge-small-en-v1.5')" && chmod -R a+rX /opt/fastembed
+
 COPY src/pidm ./src/pidm
 RUN pip install --no-deps . && rm -rf build
 COPY --from=web /web/dist ./web

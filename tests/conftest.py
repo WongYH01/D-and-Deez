@@ -4,12 +4,16 @@ import copy
 import itertools
 import json
 import random as _random
+import zlib
 from pathlib import Path
 
 import pytest
+from fastapi.testclient import TestClient
+from types import SimpleNamespace
 from sqlalchemy import ColumnDefault, select
 
-from pidm.campaign import Setup, start_campaign
+from pidm.app import create_app
+from pidm.campaign import PLAN_TOOL, Setup, start_campaign
 from pidm.claude import Reply, Usage
 from pidm.db import open_db
 from pidm.dice import Dice
@@ -57,6 +61,28 @@ class FakeClaude:
                     on_text(b["text"])
         stop = "tool_use" if any(b["type"] == "tool_use" for b in blocks) else "end_turn"
         return Reply(content=blocks, stop_reason=stop, usage=Usage(100, 20, 60))
+
+
+class FakeEmbedder:
+    """Seam 2/4 stand-in for the local model: a hashed bag of words, so texts sharing words are close."""
+
+    DIM = 384
+
+    def __init__(self, model_id="fake-1", fail=None):
+        self.model_id, self.fail, self.calls = model_id, fail, []
+
+    def embed(self, texts):
+        self.calls.append(list(texts))
+        if self.fail:
+            raise self.fail
+        out = []
+        for t in texts:
+            v = [0.0] * self.DIM
+            for w in t.lower().split():
+                v[zlib.crc32(w.strip(".,?!").encode()) % self.DIM] += 1.0
+            norm = sum(x * x for x in v) ** 0.5 or 1.0
+            out.append([x / norm for x in v])  # unit length, so L2 distance orders like cosine
+        return out
 
 
 class Events(list):
@@ -183,3 +209,56 @@ def set_auto_roll(factory, on: bool) -> None:
         for camp in db.scalars(select(Campaign)):
             camp.auto_roll = on
         db.commit()
+
+
+# --- Seam 4: the server app (shared by test_server.py and any test that plays through HTTP) ---
+
+
+SETUP = {"setting": "dark fantasy", "tone": "grim", "length": "one-shot", "template": "rogue",
+         "character_name": "Wren", "hook": "Raised by the ferryman Osric.", "lines": "", "veils": ""}
+
+
+def bible_call(bible=None):
+    return tool(PLAN_TOOL, **(bible or fixture_bible()))
+
+
+@pytest.fixture
+def make_server(factory, tmp_path):
+    def make(turn=(), plan=(), recap=(), web_dir=None, embedder=None):
+        clients = SimpleNamespace(turn=FakeClaude(*turn), plan=FakeClaude(*plan), recap=FakeClaude(*recap))
+        app = create_app(factory, turn_client=clients.turn, plan_client=clients.plan, recap_client=clients.recap,
+                         backup_dir=tmp_path / "backups", inline=True, web_dir=web_dir, embedder=embedder,
+                         sources_dir=tmp_path / "sources")
+        events = Events()
+        app.state.broadcaster.subscribe(events)
+        return SimpleNamespace(http=TestClient(app), events=events, backups=tmp_path / "backups",
+                               sources=tmp_path / "sources", **vars(clients))
+    return make
+
+
+@pytest.fixture
+def server(make_server):
+    return make_server()
+
+
+def create(s, **overrides) -> int:
+    s.plan.script.append(bible_call())
+    r = s.http.post("/campaigns", json={**SETUP, **overrides})
+    assert r.status_code == 202
+    return r.json()["campaign_id"]
+
+
+def campaigns(s) -> dict[int, dict]:
+    return {c["id"]: c for c in s.http.get("/campaigns").json()}
+
+
+def start(s, campaign_id, narration="Fog on the Reed Shore. What do you do?") -> int:
+    s.turn.script.append(text(narration))
+    r = s.http.post("/session/start", json={"campaign_id": campaign_id})
+    assert r.status_code == 202, r.text
+    return r.json()["session_id"]
+
+
+def act(s, action, *replies):
+    s.turn.script.extend(replies or [text("Nothing stirs.")])
+    return s.http.post("/action", json={"text": action})

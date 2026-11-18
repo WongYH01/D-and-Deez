@@ -14,7 +14,7 @@ Pi Dungeon Master is a single-player, text-based D&D 5e game served as a web app
 - No rule drift on mechanics: dice, damage, conditions, XP and inventory are computed by code, never by the model.
 - A real story arc: every campaign has a setting, an opening hook, a plot that can't dead-end, and defined endings.
 - Continuity: v1 carries the story across sessions through recaps and the campaign plan; v2 adds long-term recall of individual NPCs, places and events.
-- One container image that runs on a PC (amd64) and a Raspberry Pi 5 (arm64), with no local model inference.
+- One container image that runs on a PC (amd64) and a Raspberry Pi 5 (arm64), with no local LLM inference. From v2 one small local embedding model is allowed for scene recall (ADR 0005).
 
 **Non-goals for v1**
 
@@ -93,10 +93,11 @@ All data lives in one SQLite file in WAL mode on a mounted volume, so the sheet 
 | `rolls` | turn\_id, purpose, expr, dice, total, target, outcome | Engine | v1 |
 | `srd_monsters`, `srd_spells`, `srd_items` | slug, name, data (JSON) | Import script, read-only | v1 |
 | `rules_fts` | section, body (FTS5 virtual table) | Import script, read-only | v1 |
-| `entities` | id, name, kind (npc, place, faction, item), aliases, summary | Engine, worker | v2 |
+| `entities` | id, campaign_id, name, kind (npc, place, faction, item), aliases, summary, location_slug (set for bible Locations) | Engine, worker | v2 |
 | `facts` | subject\_id, relation, object\_id, valid\_from\_turn, valid\_to\_turn, source\_turn | Engine, worker | v2 |
 | `scene_vec` | scene\_id, embedding (sqlite-vec `vec0` table) | Worker | v2 |
 | `dm_notes` | id, campaign\_id, note, updated\_turn | Engine (`write_note`) | v2 |
+| `bible_versions` | id, campaign\_id, version, bible, diff, created\_at | Setup (version 1), replan job, rollback | v2 |
 | `spell_slots` | character\_id, level, max, used | Engine | v2 |
 
 From v2, adventure import adds `sources`, `source_chunks` (FTS5) and `campaigns.source_id`; see Adventure import.
@@ -235,6 +236,8 @@ Every turn the dynamic context carries a director block of about 150 to 300 toke
 
 Deferred to v2. In v1 the bible stays fixed for the whole campaign: three clues per secret and stall detection keep the plot moving when the player goes off-script, and a one-shot never needs a replan. From v2, at session end the background worker compares the bible with what actually happened and revises future beats, clues and clocks; for example, if the player killed the informant, his clues move elsewhere.
 
+The replan runs once per session end, as an ordinary background job after the Final recap and before the backup; it is skipped for a session where the player took no action, and a failed or unchanged replan adds no version. Claude proposes a whole bible and the code merges it: only open Beats, unrevealed Clues and side Clocks with no progress come from the proposal, and the merged bible must pass the same checks as a generated one, with the errors fed back for up to 3 attempts. It changes only unplayed content: it never touches revealed Clues, completed Beats or the Endings' conditions. Each replan is saved as a new bible version, so a bad one can be rolled back (`pidm.replan.rollback` re-applies an earlier version's unplayed content as a new version; there is no endpoint yet). `Campaign.bible` always holds the latest version, which is what play uses. The next session's opening waits in the job queue behind the replan, and no Turn runs while no session is open, so a replan never overlaps a Turn. The player sees only a neutral "the story adapted" line in the Campaigns view (`adapted` on `GET /campaigns` is a flag, never the diff); the full diff is logged server-side and is for the player to read after the Campaign ends.
+
 ### 6. Ending
 
 `end_campaign` is accepted only when one of these holds:
@@ -253,6 +256,10 @@ For the other endings Claude's final narration is the epilogue (a narrow victory
 ## Adventure import (v2)
 
 Deferred to v2 (M6); v1 campaigns are always generated. From v2, a campaign can start from a human-written adventure instead of a generated one. The importer converts the adventure into the same campaign bible and keeps the author's original text, so Claude narrates the writer's scenes and improvises only in the gaps. The project is for personal use, so any adventure the player owns or has downloaded can be imported; imported files are never redistributed.
+
+**M6d decisions.** Import is a separate "Import adventure" path on the Setup screen: the player uploads a PDF or text file, text is extracted locally (a PDF with no text layer is rejected with a clear error), Claude converts the text to a bible, and the player reviews a spoiler-free premise plus warnings before accepting; cancelling deletes the source. The usual setup choices (Template, Ruleset, Lines and veils) still apply. Retrieval gives Claude only the `source_chunks` for the Character's current Location, never the whole text, and never shows them in the UI. The first release ships import, schema validation and per-location retrieval only; solo scaling (sidekick, bonus levels, save rerolls) is a later design once a real adventure has been imported, and the review warns that party-of-four adventures are harder for one Character.
+
+**As built (M6d).** Upload and conversion are two calls (`POST /sources`, then `POST /campaigns` with `source_id`). Text is split at Markdown or ALL-CAPS headings (long sections at paragraph breaks) and a chunk whose heading names a bible Location or NPC is tagged to it (`kind`, `ref`). The conversion prompt asks Claude to fill the gaps (three clues, a Main clock, a defeat ending) and the result must pass the generated schema, with 1 to 3 Acts; the Campaign's `length` is `imported`. `GET /campaigns` gives an imported Campaign `source_id`, `summary` (counts of acts, NPCs and locations) and `warnings`, never the plan or the text. A Turn's context carries the author's text for the current Location in a `<source>` block (6,000 characters at most). Monster mapping and the solo-scaling steps below are not built.
 
 **Pipeline**
 
@@ -355,9 +362,12 @@ The browser sends commands over plain HTTP and receives everything a turn produc
 | `GET /` | The setup wizard or the play screen | HTML |
 | `GET /health` | Liveness check for the container | 200 |
 | `POST /campaigns` | Create a campaign from the setup form; a job generates the bible and validates it | 202 with `campaign_id`; status is `generating`, then `ready` (premise shown) or `failed` (with `setup_error`) |
+| `POST /sources?filename=<name>` | Import step 1: the raw PDF, Markdown or text file as the body; its text is extracted locally and stored in `sources` and `source_chunks` | 200 with `source_id`; 400 with the reason (no text layer, unreadable, not UTF-8, empty, wrong type, too long); 413 over 50 MB |
+| `DELETE /sources/{id}` | Cancel an import: deletes the source, its file, its chunks and its unplayed (`ready` or `failed`) Campaign | 200; 404 unknown; 409 once a Campaign using it is generating, active or complete |
+| `POST /campaigns` with `source_id` | Import step 2: converts the stored adventure to the bible (setting, tone and length come from it; Template, Lines and veils, name and hook apply); one Campaign per source | 202 as above; 404 unknown source; 409 source already used |
 | `POST /campaigns/{id}/regenerate` | Replace a `ready` campaign's bible with a new one | 202; status returns to `generating` |
 | `POST /campaigns/{id}/retire` | The player ends the campaign: Retired, no Claude call | 200; 409 while a turn is running |
-| `GET /campaigns` | List campaigns and their status | JSON |
+| `GET /campaigns` | List campaigns and their status, with `adapted` (true once a replan saved a new bible version) | JSON |
 | `GET /state` | Sheet (with ability scores, saves, all skills, speed and Features), conditions, inventory, quests, encounter, visible clocks, `running_turn_seq`, `pending_prompt` (the open Roll prompt or `null`), `auto_roll` | JSON; 404 if no session is open. `encounter` is `null` outside a fight, else `{round, active, order: [{name, initiative, conditions, health}]}`: the Character and the Combatants in initiative order, `health` one of unhurt, wounded, bloodied, down. HP and AC are never sent |
 | `GET /log?session=<id>` | Committed turns and rolls for a session | JSON |
 | `POST /action` | Submit `{text}` for the open session | 202 with `turn_seq`; 409 if a turn is running or no session is open |
@@ -463,7 +473,7 @@ Each milestone ends in something testable, the container comes first so every la
 4. **M3: Story director.** Setup inputs as terminal flags, bible generation with schema and code validation, a hand-written one-shot bible fixture, story tables, the story tools (`move_to`, `advance_beat`, `tick_clock`, `reveal_clue`, `end_campaign`), director block, stall detection and endings. *Exit: a one-shot plays from its opening hook to a valid ending in the terminal, and a scripted idle run triggers a clue within 8 turns.*
 5. **M4: Server and streaming.** FastAPI endpoints (including regenerate, retire, equip and unequip), the SSE stream wired to the M1 turn orchestrator on a turn thread, a job thread for bible generation and recaps, campaign-wide turn numbering, campaign-scoped encounters, both cache breakpoints, the token budget, background recaps, resume turns, session start and end with `VACUUM INTO` backups. *Exit: a turn submitted with curl streams rolls and narration; a forced API failure leaves game state unchanged and saves a failed turn row; turn 2 reports cached tokens; a session started without the previous final recap writes it first; campaign creation returns at once and the campaign shows as ready when its bible is saved. Cached tokens and curl streaming are checked by hand against the real API; the rest, including `cache_control` placement, is covered by tests with the fake Claude client. Databases from before M4 are not migrated.*
 6. **M5: Web UI (v1 release).** The React single-page app in `src/web` and its Node build stage, served by FastAPI at `/`: setup wizard with premise accept or regenerate, Campaigns list, play screen with a sheet showing conditions, visible clocks and the encounter panel, log with roll lines, direct equip actions, reload recovery, campaign ending, a phone layout and the About page. Server work: the encounter in `GET /state` and a `visible` flag on bible clocks. *Exit: the success criteria in the Overview are met on the Pi. Vitest covers the event reducer; the screens are checked by hand in a browser.*
-7. **M6: v2.** World graph, scenes and scene recall, DM notes (which also hold rulings), spellcasting with spell slots, a full character builder with carrying a character into a new campaign, adventure import with solo scaling, between-session replanning, and optional non-fantasy reskins. *Exit: an NPC introduced in session 1 is recalled correctly in session 3 without replaying old turns, a spellcaster completes a fight, and an imported one-page dungeon plays to an ending using its original room text.*
+7. **M6: v2**, shipped as four sub-milestones, each playable and merged on its own: **M6a Memory** (entities and facts seeded from the bible's NPCs and Locations, scenes with background summaries, scene recall with a local embedding model, DM notes capped at about 500 tokens, which also hold rulings), **M6b Spellcasting** (caster Templates for level 1 Wizard and Cleric, cantrips, level 1 and 2 slots recovered by `rest`, `cast_spell` computing attacks, DCs, damage and healing, and returning SRD text for effects the engine does not model; no concentration, ritual casting or levelling), **M6c Replanning**, **M6d Adventure import** (no solo scaling). The character builder, carry-over and non-fantasy reskins are not in M6. *Exit: an NPC introduced in session 1 is recalled correctly in session 3 without replaying old turns, a spellcaster completes a fight, and an imported one-page dungeon plays to an ending using its original room text.*
 8. **M7: Voice (v3).** Push-to-talk speech-to-text feeding `POST /action`, and Piper text-to-speech reading narration aloud. *Exit: a full scene played by voice alone.*
 
 ## Open questions
@@ -475,9 +485,9 @@ Each milestone ends in something testable, the container comes first so every la
 - [x] Clocks: should the player see the antagonist's main clock, or only feel it through the story? Decided: the main clock stays hidden; the bible marks other clocks visible.
 - [ ] Non-fantasy settings in v2: reskin SRD mechanics, or add a separate open ruleset?
 - [ ] Character carry-over: keep level and gear in a new campaign, or reset to level 1? Deferred to the v2 character builder; v1 offers only New campaign after an ending.
-- [ ] Embeddings in v2: Voyage AI (an extra API and key) or a small local model in the container?
+- [x] Embeddings in v2: Voyage AI (an extra API and key) or a small local model in the container? Decided: a small quantised ONNX model that runs on a Pi 5 (ADR 0005); `scene_vec` stores the model id and a startup check re-embeds scenes whose id differs from the configured one. Embedding failure skips scene recall, never fails a Turn.
 - [x] Remote play: is Tailscale needed for v1, or is home Wi-Fi enough? Decided: home Wi-Fi is enough for v1.
-- [ ] Import (v2): send PDFs to Claude as whole documents, or extract text locally first to save tokens?
+- [x] Import (v2): send PDFs to Claude as whole documents, or extract text locally first to save tokens? Decided: extract locally; Claude sees only text.
 
 ## Design review
 

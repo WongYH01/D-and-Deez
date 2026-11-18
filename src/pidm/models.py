@@ -47,13 +47,45 @@ class Campaign(Base):
     # Player notes: the player's own page, never sent to Claude and outside every Turn's transaction.
     player_notes: Mapped[str] = mapped_column(Text, default="")
     auto_roll: Mapped[bool] = mapped_column(Boolean, default=False)  # skip Roll prompts
+    source_id: Mapped[int | None] = mapped_column(ForeignKey("sources.id"), nullable=True)  # imported adventure
 
-    character: Mapped["Character"] = relationship(back_populates="campaign", uselist=False, cascade="all, delete-orphan")
+    character:Mapped["Character"] = relationship(back_populates="campaign", uselist=False, cascade="all, delete-orphan")
     quests: Mapped[list["Quest"]] = relationship(back_populates="campaign", cascade="all, delete-orphan", order_by="Quest.id")
     sessions: Mapped[list["Session"]] = relationship(back_populates="campaign", cascade="all, delete-orphan", order_by="Session.id")
     beats: Mapped[list["Beat"]] = relationship(back_populates="campaign", cascade="all, delete-orphan", order_by="Beat.id")
     secrets: Mapped[list["Secret"]] = relationship(back_populates="campaign", cascade="all, delete-orphan", order_by="Secret.id")
     clocks: Mapped[list["Clock"]] = relationship(back_populates="campaign", cascade="all, delete-orphan", order_by="Clock.id")
+    entities: Mapped[list["Entity"]] = relationship(back_populates="campaign", cascade="all, delete-orphan", order_by="Entity.id")
+    facts: Mapped[list["Fact"]] = relationship(back_populates="campaign", cascade="all, delete-orphan", order_by="Fact.id")
+    dm_notes: Mapped[list["DmNote"]] = relationship(back_populates="campaign", cascade="all, delete-orphan", order_by="DmNote.id")
+    bible_versions: Mapped[list["BibleVersion"]] = relationship(
+        back_populates="campaign", cascade="all, delete-orphan", order_by="BibleVersion.version")
+
+
+class Source(Base):
+    """An uploaded adventure file. Its split text lives in the `source_chunks` FTS5 table (pidm.sources); a source is
+    shared by nothing but the Campaigns that import it, so it is not Campaign-owned."""
+    __tablename__ = "sources"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    title: Mapped[str] = mapped_column(String(200))
+    author: Mapped[str] = mapped_column(String(200), default="")
+    path: Mapped[str] = mapped_column(Text, default="")
+    sha256: Mapped[str] = mapped_column(String(64))
+    imported_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class BibleVersion(Base):
+    """One saved bible: version 1 is the generated one, each replan or rollback adds the next. `Campaign.bible` always
+    holds the latest, which is what play uses. `diff` is the spoiler text of the change, for the server log and for
+    the player after the Campaign ends."""
+    __tablename__ = "bible_versions"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    campaign_id: Mapped[int] = mapped_column(ForeignKey("campaigns.id"))
+    version: Mapped[int] = mapped_column(Integer)
+    bible: Mapped[dict] = mapped_column(JSON)
+    diff: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    campaign: Mapped[Campaign] = relationship(back_populates="bible_versions")
 
 
 class Character(Base):
@@ -90,8 +122,12 @@ class Character(Base):
     feature_uses: Mapped[dict] = mapped_column(JSON, default=dict)
     # Short-lived combat flags: hidden, dodging, raging, frenzy, rage_rounds, reckless.
     flags: Mapped[dict] = mapped_column(JSON, default=dict)
+    # A caster's known spells by slug: {"cantrips": [...], "spellbook": [...], "prepared": [...]}; {} for non-casters.
+    spells: Mapped[dict] = mapped_column(JSON, default=dict)
 
     campaign: Mapped[Campaign] = relationship(back_populates="character")
+    spell_slots: Mapped[list["SpellSlot"]] = relationship(
+        back_populates="character", cascade="all, delete-orphan", order_by="SpellSlot.level")
     skills: Mapped[list["Skill"]] = relationship(back_populates="character", cascade="all, delete-orphan")
     inventory: Mapped[list["InventoryItem"]] = relationship(
         back_populates="character", cascade="all, delete-orphan", order_by="InventoryItem.id")
@@ -107,6 +143,15 @@ class Skill(Base):
     proficient: Mapped[bool] = mapped_column(Boolean, default=True)
     expertise: Mapped[bool] = mapped_column(Boolean, default=False)
     character: Mapped[Character] = relationship(back_populates="skills")
+
+
+class SpellSlot(Base):
+    __tablename__ = "spell_slots"
+    character_id: Mapped[int] = mapped_column(ForeignKey("characters.id"), primary_key=True)
+    level: Mapped[int] = mapped_column(Integer, primary_key=True)  # the slot's spell level
+    max: Mapped[int] = mapped_column(Integer)
+    used: Mapped[int] = mapped_column(Integer, default=0)
+    character: Mapped[Character] = relationship(back_populates="spell_slots")
 
 
 class InventoryItem(Base):
@@ -192,6 +237,55 @@ class Session(Base):
     encounters: Mapped[list["Encounter"]] = relationship(back_populates="session", cascade="all, delete-orphan", order_by="Encounter.id")
 
 
+class Scene(Base):
+    """A finished Scene: the Turns (by seq, inclusive) between two Scene ends. The open Scene has no row."""
+    __tablename__ = "scenes"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    session_id: Mapped[int] = mapped_column(ForeignKey("sessions.id"))
+    start_turn: Mapped[int] = mapped_column(Integer)
+    end_turn: Mapped[int] = mapped_column(Integer)
+    summary: Mapped[str] = mapped_column(Text, default="")  # empty until the worker writes it
+
+
+class Entity(Base):
+    """A named NPC, place, faction or item the story remembers (design: Memory strategy)."""
+    __tablename__ = "entities"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    campaign_id: Mapped[int] = mapped_column(ForeignKey("campaigns.id"))
+    name: Mapped[str] = mapped_column(String(200))
+    kind: Mapped[str] = mapped_column(String(20))  # npc, place, faction, item
+    aliases: Mapped[list] = mapped_column(JSON, default=list)
+    summary: Mapped[str] = mapped_column(Text, default="")
+    location_slug: Mapped[str] = mapped_column(String(60), default="")  # set when the place is a bible Location
+    campaign: Mapped[Campaign] = relationship(back_populates="entities")
+
+
+class Fact(Base):
+    """A relation between two Entities over a span of Turns; retired by setting valid_to_turn, never deleted."""
+    __tablename__ = "facts"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    campaign_id: Mapped[int] = mapped_column(ForeignKey("campaigns.id"))
+    subject_id: Mapped[int] = mapped_column(ForeignKey("entities.id"))
+    relation: Mapped[str] = mapped_column(String(100))
+    object_id: Mapped[int] = mapped_column(ForeignKey("entities.id"))
+    valid_from_turn: Mapped[int] = mapped_column(Integer)
+    valid_to_turn: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    source_turn: Mapped[int] = mapped_column(Integer)
+    campaign: Mapped[Campaign] = relationship(back_populates="facts")
+    subject: Mapped[Entity] = relationship(foreign_keys=[subject_id])
+    object: Mapped[Entity] = relationship(foreign_keys=[object_id])
+
+
+class DmNote(Base):
+    """One of Claude's own notes; all of a Campaign's notes share a small cap."""
+    __tablename__ = "dm_notes"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    campaign_id: Mapped[int] = mapped_column(ForeignKey("campaigns.id"))
+    note: Mapped[str] = mapped_column(Text)
+    updated_turn: Mapped[int] = mapped_column(Integer)
+    campaign: Mapped[Campaign] = relationship(back_populates="dm_notes")
+
+
 class Encounter(Base):
     __tablename__ = "encounters"
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -258,6 +352,9 @@ class SrdMonster(Base):
 
 
 class SrdSpell(Base):
+    # data keys the engine reads: level, casting_time, range, desc, higher_level, attack_type, area_of_effect,
+    # dc {dc_type, dc_success: none|half|other}, damage [{damage_type, damage_at_character_level | damage_at_slot_level}]
+    # and heal_at_slot_level (dice with "MOD"); tables map a level to dice, e.g. {"1": "3d6", "2": "4d6"}.
     __tablename__ = "srd_spells"
     slug: Mapped[str] = mapped_column(String(60), primary_key=True)
     name: Mapped[str] = mapped_column(String(100))

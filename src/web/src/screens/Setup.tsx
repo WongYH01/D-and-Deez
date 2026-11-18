@@ -22,13 +22,17 @@ const TEMPLATES = {
   fighter: "Fighter: Human Champion",
   rogue: "Rogue: Lightfoot Halfling Thief",
   barbarian: "Barbarian: Half-Orc Berserker",
+  wizard: "Wizard: Human, a spellcaster",
+  cleric: "Cleric: Human Life Domain, a spellcaster",
 };
 const STEPS = ["Setting", "Tone", "Length", "Lines and veils", "Character"];
+// An imported adventure brings its own setting, tone and length.
+const IMPORT_STEPS = ["Adventure", "Lines and veils", "Character"];
 
 type Phase =
   | { kind: "form" }
   | { kind: "generating"; id: number }
-  | { kind: "ready"; id: number; premise: string }
+  | { kind: "ready"; id: number; premise: string; view: CampaignView }
   | { kind: "failed"; error: string };
 
 /** A labelled shadcn select over a value → label table. */
@@ -72,6 +76,8 @@ export function Setup() {
   const [template, setTemplate] = useState("fighter");
   const [characterName, setCharacterName] = useState("");
   const [hook, setHook] = useState("");
+  const [importing, setImporting] = useState(false);
+  const [file, setFile] = useState<File | null>(null);
   const [phase, setPhase] = useState<Phase>({ kind: "form" });
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
@@ -88,7 +94,7 @@ export function Setup() {
       const c = list?.find((c) => c.id === phase.id);
       // A failed fetch retries; a list without the Campaign means it was deleted, so stop.
       if (list && !c) setPhase({ kind: "failed", error: "The Campaign no longer exists." });
-      else if (c?.status === "ready") setPhase({ kind: "ready", id: c.id, premise: c.premise ?? "" });
+      else if (c?.status === "ready") setPhase({ kind: "ready", id: c.id, premise: c.premise ?? "", view: c });
       else if (c?.status === "failed") setPhase({ kind: "failed", error: c.setup_error });
       else timer = setTimeout(poll, 1000);
     };
@@ -119,17 +125,45 @@ export function Setup() {
     }
   }
 
-  const custom = setting === CUSTOM;
-  const last = step === STEPS.length - 1;
+  const steps = importing ? IMPORT_STEPS : STEPS;
+  const name = steps[step];
+  const custom = !importing && setting === CUSTOM;
+  const last = step === steps.length - 1;
+
+  function chooseMode(on: boolean) {
+    setImporting(on);
+    setStep(0);
+    setNotice("");
+  }
+
+  /** Import step 1: send the file; the server extracts its text and answers with a source id, or a 400 reason. */
+  async function upload(f: File): Promise<number | null> {
+    setBusy(true);
+    setNotice("");
+    try {
+      const r = await fetch(`/sources?filename=${encodeURIComponent(f.name)}`, { method: "POST", body: f });
+      if (r.ok) return (await r.json()).source_id;
+      setNotice(await refusal(r, "The adventure could not be uploaded."));
+    } catch {
+      setNotice("The adventure could not be uploaded.");
+    } finally {
+      setBusy(false);
+    }
+    return null;
+  }
 
   async function submit(e: FormEvent) {
     e.preventDefault();
     if (custom && !premise.trim()) return;
     if (!last) return setStep(step + 1);
-    const r = await post("/campaigns", {
-      setting: custom ? premise.trim() : setting, tone, length, lines, veils,
-      template, character_name: characterName, hook,
-    }, "The Campaign could not be created.");
+    const common = { lines, veils, template, character_name: characterName, hook };
+    let body: object = { ...common, setting: custom ? premise.trim() : setting, tone, length };
+    if (importing) {
+      const source_id = file && (await upload(file));
+      if (source_id == null) return setStep(0);
+      body = { ...common, source_id };
+    }
+    const r = await post("/campaigns", body, "The Campaign could not be created.");
     if (r) setPhase({ kind: "generating", id: (await r.json()).campaign_id });
   }
 
@@ -143,7 +177,13 @@ export function Setup() {
   }
 
   if (phase.kind === "ready") {
-    const { id } = phase;
+    const { id, view } = phase;
+    // Cancelling an import deletes the source and its Campaign.
+    const cancel = async () => {
+      const r = await fetch(`/sources/${view.source_id}`, { method: "DELETE" }).catch(() => null);
+      if (r?.ok) setPhase({ kind: "form" });
+      else setNotice(r ? await refusal(r, "The import could not be cancelled.") : "The import could not be cancelled.");
+    };
     const accept = async () => {
       // The play screen streams Turn 0 once the Session opens.
       if (await post("/session/start", { campaign_id: id }, "The Session could not be started.")) {
@@ -159,10 +199,24 @@ export function Setup() {
       <section className="max-w-xl space-y-4">
         <h1 className="font-heading text-2xl">Your Campaign</h1>
         <p className="font-serif text-lg">{phase.premise}</p>
+        {view.summary && (
+          <p className="text-sm text-muted-foreground">
+            {view.summary.acts} {view.summary.acts === 1 ? "act" : "acts"}, {view.summary.npcs} NPCs,{" "}
+            {view.summary.locations} locations
+          </p>
+        )}
+        {view.warnings.length > 0 && (
+          <ul className="list-disc space-y-1 pl-5 text-sm" aria-label="Warnings">
+            {view.warnings.map((w) => <li key={w}>{w}</li>)}
+          </ul>
+        )}
         {notice && <p className="text-sm text-destructive" role="alert">{notice}</p>}
         <div className="flex gap-2">
           <Button autoFocus disabled={busy} onClick={() => void accept()}>Accept</Button>
           <Button variant="outline" disabled={busy} onClick={() => void regenerate()}>Regenerate</Button>
+          {view.source_id != null && (
+            <Button variant="outline" disabled={busy} onClick={() => void cancel()}>Cancel</Button>
+          )}
         </div>
       </section>
     );
@@ -183,10 +237,25 @@ export function Setup() {
       <div>
         <h1 className="font-heading text-2xl">New campaign</h1>
         <p className="text-sm text-muted-foreground">
-          Step {step + 1} of {STEPS.length}: {STEPS[step]}
+          Step {step + 1} of {steps.length}: {name}
         </p>
+        {step === 0 && (
+          <Button type="button" variant="link" className="px-0" onClick={() => chooseMode(!importing)}>
+            {importing ? "Generate a campaign instead" : "Import an adventure instead"}
+          </Button>
+        )}
       </div>
-      {step === 0 && (
+      {name === "Adventure" && (
+        <Field id="adventure" label="Adventure file (PDF, Markdown or text)">
+          <Input id="adventure" type="file" accept=".pdf,.md,.markdown,.txt"
+            onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+          <p className="text-sm text-muted-foreground">
+            The file stays on this machine. Claude reads its text once to plan the story, then only the part for
+            where you are.
+          </p>
+        </Field>
+      )}
+      {name === "Setting" && (
         <>
           <Choice id="setting" label="Setting" items={SETTINGS} value={setting} onChange={setSetting} />
           {custom && (
@@ -196,9 +265,9 @@ export function Setup() {
           )}
         </>
       )}
-      {step === 1 && <Choice id="tone" label="Tone" items={TONES} value={tone} onChange={setTone} />}
-      {step === 2 && <Choice id="length" label="Length" items={LENGTHS} value={length} onChange={setLength} />}
-      {step === 3 && (
+      {name === "Tone" && <Choice id="tone" label="Tone" items={TONES} value={tone} onChange={setTone} />}
+      {name === "Length" && <Choice id="length" label="Length" items={LENGTHS} value={length} onChange={setLength} />}
+      {name === "Lines and veils" && (
         <>
           <Field id="lines" label="Lines">
             <Textarea id="lines" autoFocus placeholder="Topics never shown" value={lines}
@@ -210,7 +279,7 @@ export function Setup() {
           </Field>
         </>
       )}
-      {step === 4 && (
+      {name === "Character" && (
         <>
           <Choice id="template" label="Template" items={TEMPLATES} value={template} onChange={setTemplate} />
           <Field id="character-name" label="Character name">
@@ -230,7 +299,7 @@ export function Setup() {
             Back
           </Button>
         )}
-        <Button type="submit" disabled={busy || (custom && !premise.trim())}>
+        <Button type="submit" disabled={busy || (custom && !premise.trim()) || (name === "Adventure" && !file)}>
           {last ? "Create campaign" : "Next"}
         </Button>
       </div>
