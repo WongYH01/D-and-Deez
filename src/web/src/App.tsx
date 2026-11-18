@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { About } from "@/screens/About";
+import { Campaigns } from "@/screens/Campaigns";
 import { Play } from "@/screens/Play";
 
 const SCREENS = ["play", "campaigns", "about", "setup"] as const;
@@ -54,7 +55,7 @@ export function App() {
       <main className="mx-auto max-w-5xl p-4">
         {screen === "about" && <About />}
         {screen === "play" && <Play />}
-        {screen === "campaigns" && <Placeholder title="Campaigns" />}
+        {screen === "campaigns" && <Campaigns />}
         {screen === "setup" && <Placeholder title="New campaign" />}
       </main>
     </div>
