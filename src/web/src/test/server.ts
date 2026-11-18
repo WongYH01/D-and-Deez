@@ -25,6 +25,7 @@ export function fakeEvents() {
   const streams: FakeEventSource[] = [];
   class FakeEventSource extends EventTarget {
     onopen: (() => void) | null = null;
+    onerror: (() => void) | null = null;
     constructor() {
       super();
       streams.push(this);
@@ -35,7 +36,11 @@ export function fakeEvents() {
     }
   }
   vi.stubGlobal("EventSource", FakeEventSource);
-  return (type: string, payload: object) => {
+  const emit = (type: string, payload: object) => {
     for (const s of streams) s.dispatchEvent(new MessageEvent(type, { data: JSON.stringify(payload) }));
   };
+  /** `emit.drop()`: the stream errors, as when the server goes away; `emit.reconnect()`: the browser's retry succeeds. */
+  emit.drop = () => streams.forEach((s) => s.onerror?.());
+  emit.reconnect = () => streams.forEach((s) => s.onopen?.());
+  return emit;
 }

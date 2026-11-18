@@ -54,6 +54,7 @@ export function Play() {
   const [log, dispatch] = useReducer(foldLog, emptyLog);
   const [sending, setSending] = useState(false);
   const [notice, setNotice] = useState("");
+  const [offline, setOffline] = useState(false);
   // Every Ending closes the Session, so only the `campaign_ended` event carries it; a reload lands on Campaigns.
   const [ending, setEnding] = useState<string | null>(null);
   const ended = useRef(false);
@@ -96,7 +97,12 @@ export function Play() {
   useEffect(() => {
     const es = new EventSource("/events");
     // Fetch only once subscribed, so a Turn that ends after the fetch still reaches the log.
-    es.onopen = () => void restore();
+    es.onopen = () => {
+      setOffline(false);
+      void restore();
+    };
+    // The browser retries on its own and fires `onopen` again.
+    es.onerror = () => setOffline(true);
     for (const type of TURN_EVENTS) {
       es.addEventListener(type, (e) => dispatch({ type, ...JSON.parse((e as MessageEvent).data) }));
     }
@@ -184,6 +190,11 @@ export function Play() {
     <div className="grid h-full gap-4 md:h-auto md:grid-cols-[16rem_1fr]">
       {wide && sheet}
       <section className="flex min-h-0 min-w-0 flex-col gap-3">
+        {offline && (
+          <p role="alert" className="shrink-0 rounded-md border border-destructive px-3 py-2 text-sm text-destructive">
+            Connection to the server lost. Retrying…
+          </p>
+        )}
         {!wide && sheet && (
           <Drawer>
             <DrawerTrigger render={<Button variant="outline" className="self-start" />}>
