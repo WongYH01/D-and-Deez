@@ -129,10 +129,9 @@ CLASSES = {
     "barbarian": {"hit_die": 12, "avg": 7, "saves": ("str", "con"),
                   "weapons": {"simple", "martial"}, "asi_ability": "str"},
     "wizard": {"hit_die": 6, "avg": 4, "saves": ("int", "wis"),
-               "weapons": {"dagger", "dart", "sling", "quarterstaff", "light_crossbow"}, "asi_ability": "int",
-               "spellcasting": "int"},
+               "weapons": {"dagger", "dart", "sling", "quarterstaff", "light_crossbow"}, "asi_ability": "int"},
     "cleric": {"hit_die": 8, "avg": 5, "saves": ("wis", "cha"),
-               "weapons": {"simple"}, "asi_ability": "wis", "spellcasting": "wis"},
+               "weapons": {"simple"}, "asi_ability": "wis"},
 }
 # SRD Wizard and Cleric tables (identical full-caster slots): spell slots by Character level, indexed by slot level - 1.
 SPELL_SLOTS = {1: (2,), 2: (3,), 3: (4, 2), 4: (4, 3), 5: (4, 3, 2)}
