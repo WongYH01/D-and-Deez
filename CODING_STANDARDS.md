@@ -28,7 +28,7 @@ Tools change ORM objects loaded for the Turn; only the orchestrator commits a Tu
 
 Tests call tools through `dispatch` with scripted dice (Seam 1), run the orchestrator with a fake Claude client (Seam 2), start a Campaign through `start_campaign` with a fake Claude client that returns bible tool calls (Seam 3), or drive the HTTP API through `TestClient` on an app built by `create_app` with fake Claude clients, a temporary database and backups folder, `inline` work and a test subscriber on the broadcaster (Seam 4). Expected numbers come from the SRD text or worked dice, never recomputed the way the code does. A test of a rule names the section or ruling it covers.
 
-UI tests fold actions through a reducer such as `foldLog` in `src/web/src/play/log.ts` (Seam 5), or render a screen with `fetch` stubbed by a route table, as `fakeServer` in `src/web/src/screens/Setup.test.tsx` does (Seam 6). Move `fakeServer` to a shared test helper when a second screen needs it.
+UI tests fold actions through a reducer such as `foldLog` in `src/web/src/play/log.ts` (Seam 5), or render a screen with `fetch` stubbed by a route table, as `fakeServer` in `src/web/src/test/server.ts` does, with `fakeEvents` standing in for `/events` (Seam 6).
 
 ## Effect bodies use braces
 
