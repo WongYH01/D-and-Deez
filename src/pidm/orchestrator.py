@@ -72,7 +72,7 @@ def trim_history(history: list[dict], context: str, budget: int) -> list[dict]:
     """Drop the oldest action and Narration pairs until the history plus the dynamic context fits the budget.
 
     The context (state snapshot, Director block, recap block, Rule sections) is never cut; `retrieve` already
-    caps Rule sections at two, so the oldest pairs are the only thing left to drop in v1.
+    caps Rule sections at two and `_run` has already dropped recall and far Facts, so the oldest pairs are last.
     """
     size = _size(history, context)
     while history and _tokens(size) > budget:

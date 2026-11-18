@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import struct
+import threading
 from typing import Protocol
 
 from sqlalchemy import text
@@ -34,12 +35,14 @@ class FastEmbedder:
     def __init__(self, model_id: str = DEFAULT_MODEL):
         self.model_id = model_id
         self._model = None
+        self._lock = threading.Lock()  # the turn and job threads must not each load the model (memory)
 
     def embed(self, texts: list[str]) -> list[list[float]]:
-        if self._model is None:  # loaded on first use so a failure is a recall failure, not a startup one
-            from fastembed import TextEmbedding
-            self._model = TextEmbedding(self.model_id)
-        return [v.tolist() for v in self._model.embed(texts)]
+        with self._lock:
+            if self._model is None:  # loaded on first use so a failure is a recall failure, not a startup one
+                from fastembed import TextEmbedding
+                self._model = TextEmbedding(self.model_id)
+            return [v.tolist() for v in self._model.embed(texts)]
 
 
 def _blob(vector: list[float]) -> bytes:
