@@ -222,3 +222,19 @@ test("a Retired Ending from another tab stays on screen though the Session is go
   await screen.findByText("The Campaign has ended: Retired.");
   expect(location.hash).toBe("#/play");
 });
+
+test("on a phone the sheet is a drawer opened from a button", async () => {
+  vi.stubGlobal("matchMedia", () => ({ matches: false, addEventListener() {}, removeEventListener() {} }));
+  fakeEvents();
+  fakeServer({ "GET /state": () => state([sword]), "GET /log?session=1": () => [] });
+  render(<Play />);
+
+  await screen.findByRole("button", { name: "Character sheet" });
+  expect(screen.queryByRole("list", { name: "Inventory" })).toBeNull();
+
+  fireEvent.click(screen.getByRole("button", { name: "Character sheet" }));
+
+  const inventory = await screen.findByRole("list", { name: "Inventory" });
+  expect(within(inventory).getByText("longsword")).toBeTruthy();
+  expect(screen.getByRole("dialog")).toBeTruthy();
+});

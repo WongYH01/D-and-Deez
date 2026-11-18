@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerTrigger } from "@/components/ui/drawer";
 import { type LogTurn, type Roll, emptyLog, foldLog, isLocked } from "@/play/log";
 
 /** The parts of `GET /state` the play screen shows. */
@@ -41,7 +42,22 @@ const ENDING_NAMES: Record<string, string> = {
 
 const TURN_EVENTS = ["roll", "narration_delta", "turn_done", "error"] as const;
 
+/** True from the `md` breakpoint up, where the sheet sits beside the log; no matchMedia (tests) counts as wide. */
+function useWide(): boolean {
+  const query = "(min-width: 768px)";
+  const [wide, setWide] = useState(() => window.matchMedia?.(query).matches ?? true);
+  useEffect(() => {
+    const m = window.matchMedia?.(query);
+    if (!m) return;
+    const on = () => setWide(m.matches);
+    m.addEventListener("change", on);
+    return () => m.removeEventListener("change", on);
+  }, []);
+  return wide;
+}
+
 export function Play() {
+  const wide = useWide();
   const [view, setView] = useState<StateView | null>(null);
   const [log, dispatch] = useReducer(foldLog, emptyLog);
   const [sending, setSending] = useState(false);
@@ -138,16 +154,32 @@ export function Play() {
   const live = log.turns.find((t) => t.status === "running");
   const thinking = !!view && locked && ending === null && (!live || (live.rolls.length === 0 && !live.narration));
 
+  const sheet = view && (
+    <div className="space-y-4">
+      <SheetPanel view={view} gearLocked={locked || !!view.encounter} onEquip={setEquipped} />
+      {view.encounter && <EncounterPanel encounter={view.encounter} />}
+      {view.clocks.length > 0 && <ClocksPanel clocks={view.clocks} />}
+    </div>
+  );
+
+  // On a phone the log and action box fill the screen (App gives main the viewport height) and the sheet is a drawer.
   return (
-    <div className="grid gap-4 md:grid-cols-[16rem_1fr]">
-      {view && (
-        <div className="space-y-4">
-          <SheetPanel view={view} gearLocked={locked || !!view.encounter} onEquip={setEquipped} />
-          {view.encounter && <EncounterPanel encounter={view.encounter} />}
-          {view.clocks.length > 0 && <ClocksPanel clocks={view.clocks} />}
-        </div>
-      )}
-      <section className="flex min-w-0 flex-col gap-3">
+    <div className="grid h-full gap-4 md:h-auto md:grid-cols-[16rem_1fr]">
+      {wide && sheet}
+      <section className="flex min-h-0 min-w-0 flex-col gap-3">
+        {!wide && sheet && (
+          <Drawer>
+            <DrawerTrigger render={<Button variant="outline" className="self-start" />}>
+              Character sheet
+            </DrawerTrigger>
+            <DrawerContent>
+              <DrawerHeader>
+                <DrawerTitle>Character sheet</DrawerTitle>
+              </DrawerHeader>
+              <div className="overflow-y-auto p-4 pt-0">{sheet}</div>
+            </DrawerContent>
+          </Drawer>
+        )}
         <StoryLog turns={log.turns} thinking={thinking} ending={ending} onRetry={(t) => void submit(t.playerText)} locked={locked} />
         {notice && <p className="text-sm text-destructive">{notice}</p>}
         <ActionBox locked={locked} onSubmit={submit} />
@@ -298,7 +330,7 @@ function StoryLog({ turns, thinking, ending, locked, onRetry }: {
     end.current?.scrollIntoView?.({ block: "end" });
   }, [turns, thinking, ending]);
   return (
-    <div className="max-h-[70svh] min-h-64 space-y-4 overflow-y-auto rounded-lg border p-4 font-serif leading-relaxed"
+    <div className="min-h-32 flex-1 space-y-4 overflow-y-auto md:max-h-[70svh] md:min-h-64 md:flex-none rounded-lg border p-4 font-serif leading-relaxed"
       aria-live="polite">
       {turns.map((t) => (
         <div key={t.seq} className="space-y-1">
@@ -338,7 +370,7 @@ function ActionBox({ locked, onSubmit }: { locked: boolean; onSubmit: (text: str
     if (t && !locked && (await onSubmit(t))) setText("");
   }
   return (
-    <form className="flex gap-2" onSubmit={(e) => (e.preventDefault(), void send())}>
+    <form className="flex shrink-0 gap-2" onSubmit={(e) => (e.preventDefault(), void send())}>
       <input
         className="min-w-0 flex-1 rounded-md border border-input bg-transparent px-3 py-2 outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
         placeholder="What do you do?"
