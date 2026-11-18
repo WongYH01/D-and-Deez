@@ -3,6 +3,7 @@
 Story tools take bible slugs, validate against the Turn's state tree and change only the tree
 (ADR 0002). Progress (for Stall detection) is a Beat advanced or a Clue revealed; moving and
 Clock ticks are not progress.
+Every rule cites the design document's Story design section (Story design §N).
 """
 
 from __future__ import annotations
@@ -10,7 +11,7 @@ from __future__ import annotations
 from pidm.engine import GameState, ToolError
 from pidm.models import Beat, Campaign, Clock, Clue
 
-STALL_TURNS = 8
+STALL_TURNS = 8  # Story design §4
 ENDINGS = ("victory", "defeat", "fallen_hero")  # Retired is the player's, never Claude's
 
 
@@ -70,7 +71,7 @@ def end(camp: Campaign, ending: str) -> None:
 
 
 def ending_met(state: GameState) -> str | None:
-    """Which Ending condition holds now, if any (Defeat is checked first)."""
+    """Which Ending condition holds now, if any (Defeat is checked first). Story design §6."""
     camp = state.campaign
     if camp.bible is None or camp.status != "active":
         return None
@@ -83,7 +84,7 @@ def ending_met(state: GameState) -> str | None:
     return None
 
 
-# --- story tools --------------------------------------------------------------------
+# --- story tools (Story design §4; Ending checks §6) ---------------------------------
 
 def t_move_to(state: GameState, location: str) -> dict:
     camp = _campaign(state)
@@ -174,7 +175,7 @@ def t_end_campaign(state: GameState, ending: str) -> dict:
     return {"ending": ending, "note": "The Campaign is over. Narrate the epilogue."}
 
 
-# --- Director block ---------------------------------------------------------------------
+# --- Director block (Story design §4; ENDING line §6) -----------------------------------
 
 def director_block(state: GameState) -> str | None:
     """Plain-text story state for Claude every Turn; None for a Campaign without a bible."""

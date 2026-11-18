@@ -89,7 +89,7 @@ class Bible(BaseModel):
 
 
 def check(b: Bible, length: str) -> list[str]:
-    """Human-readable errors for what the schema cannot express; empty when the bible is sound."""
+    """Human-readable errors for what the schema cannot express; empty when the bible is sound (Story design §2)."""
     errors = []
     if len(b.acts) != ACTS[length]:
         errors.append(f"A {length} needs {ACTS[length]} Act(s); the bible has {len(b.acts)}.")
