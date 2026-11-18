@@ -22,6 +22,7 @@ from pidm.models import Campaign, RollRecord, Session, Turn
 from pidm.prompts import OPENING, RESUME, system_prompt, user_message
 from pidm.recap import recap_block
 from pidm.scenes import end_overlong_scene
+from pidm.recall import Embedder, recall
 from pidm.rules import retrieve
 from pidm.story import director_block, end, ending_met
 from pidm.tools import dispatch, snapshot, tool_definitions
@@ -83,13 +84,14 @@ def trim_history(history: list[dict], context: str, budget: int) -> list[dict]:
 class TurnOrchestrator:
     def __init__(self, factory: sessionmaker, client: ClaudeClient, *, round_cap: int = 4,
                  history_turns: int = 8, context_budget: int = 8000, rng: Callable[[int], int] | None = None,
-                 prompt_timeout: float = 600):
+                 prompt_timeout: float = 600, embedder: Embedder | None = None):
         self.factory = factory
         self.client = client
         self.round_cap = round_cap
         self.history_turns = history_turns
         self.context_budget = context_budget
         self.rng = rng
+        self.embedder = embedder  # None: no Scene recall
         self.prompt_timeout = prompt_timeout  # seconds an unanswered Roll prompt waits before it auto-rolls
         self._lock = threading.Lock()
         self._answered = threading.Event()
@@ -178,14 +180,16 @@ class TurnOrchestrator:
             # The action and the last two Narrations name the Entities whose Facts Claude needs.
             seen = [player_text] + [m["content"] for m in past[-4:] if m["role"] == "assistant"]
 
-            def build(hops: int) -> str:
+            def build(hops: int, scenes: list[str]) -> str:
                 world, notes = memory_blocks(state, seen, hops)
                 return user_message(snapshot(state), player_text, retrieve(db, player_text), director_block(state),
-                                    recap_block(db, state.session), world, notes)
+                                    recap_block(db, state.session), world, notes, scenes)
 
-            context = build(HOPS)
+            scenes = recall(self.factory, self.embedder, campaign_id, player_text)  # inline; never fails the Turn
+            context = build(HOPS, scenes)
             if _tokens(_size(past, context)) > self.context_budget:
-                context = build(1)  # Memory strategy: Facts more than one hop away go before recent Turns do
+                # Memory strategy: Scene recall and Facts more than one hop away go before recent Turns do.
+                context = build(1, [])
             history = trim_history(past, context, self.context_budget)
             messages = history + [{"role": "user", "content": [{"type": "text", "text": context,
                                                                 "cache_control": CACHE}]}]

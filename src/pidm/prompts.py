@@ -77,14 +77,17 @@ def system_prompt(campaign: Campaign) -> str:
 
 
 def user_message(snapshot: dict, player_text: str, rules: list[dict] | None = None, director: str | None = None,
-                 recap: str | None = None, world: str | None = None, notes: str | None = None) -> str:
-    """Dynamic context: the state snapshot, the Director block, the recap block, world Facts, DM notes, any Rule
-    sections the action names, then the action."""
+                 recap: str | None = None, world: str | None = None, notes: str | None = None,
+                 recall: list[str] | None = None) -> str:
+    """Dynamic context: the state snapshot, the Director block, the recap block, recalled Scenes, world Facts, DM
+    notes, any Rule sections the action names, then the action."""
     out = f"<state>\n{json.dumps(snapshot, separators=(',', ':'))}\n</state>\n\n"
     if director:
         out += f"<director>\n{director}\n</director>\n\n"
     if recap:
         out += f"<recap>\n{recap}\n</recap>\n\n"
+    if recall:
+        out += "<recall>\n" + "\n".join(f"- {s}" for s in recall) + "\n</recall>\n\n"
     if world:
         out += f"<world>\n{world}\n</world>\n\n"
     if notes:

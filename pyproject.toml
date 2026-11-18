@@ -7,7 +7,7 @@ name = "pidm"
 version = "0.0.0"
 description = "Pi Dungeon Master: single-player, text-based D&D 5e web app."
 requires-python = ">=3.11"
-dependencies = ["fastapi", "uvicorn", "sqlalchemy>=2.0", "alembic", "anthropic"]
+dependencies = ["fastapi", "uvicorn", "sqlalchemy>=2.0", "alembic", "anthropic", "fastembed", "sqlite-vec"]
 
 [project.optional-dependencies]
 dev = ["pytest", "httpx"]

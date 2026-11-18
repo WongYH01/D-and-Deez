@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sqlite_vec
 from alembic import command
 from alembic.config import Config
 from sqlalchemy import create_engine, event
@@ -19,6 +20,9 @@ def make_engine(db_path: str) -> Engine:
         cur.execute("PRAGMA foreign_keys=ON")
         cur.execute("PRAGMA busy_timeout=5000")  # the turn and job threads both write (ADR 0001)
         cur.close()
+        dbapi_conn.enable_load_extension(True)
+        sqlite_vec.load(dbapi_conn)  # the vec0 table of Scene recall
+        dbapi_conn.enable_load_extension(False)
 
     return engine
 

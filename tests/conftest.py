@@ -4,6 +4,7 @@ import copy
 import itertools
 import json
 import random as _random
+import zlib
 from pathlib import Path
 
 import pytest
@@ -60,6 +61,28 @@ class FakeClaude:
                     on_text(b["text"])
         stop = "tool_use" if any(b["type"] == "tool_use" for b in blocks) else "end_turn"
         return Reply(content=blocks, stop_reason=stop, usage=Usage(100, 20, 60))
+
+
+class FakeEmbedder:
+    """Seam 2/4 stand-in for the local model: a hashed bag of words, so texts sharing words are close."""
+
+    DIM = 384
+
+    def __init__(self, model_id="fake-1", fail=None):
+        self.model_id, self.fail, self.calls = model_id, fail, []
+
+    def embed(self, texts):
+        self.calls.append(list(texts))
+        if self.fail:
+            raise self.fail
+        out = []
+        for t in texts:
+            v = [0.0] * self.DIM
+            for w in t.lower().split():
+                v[zlib.crc32(w.strip(".,?!").encode()) % self.DIM] += 1.0
+            norm = sum(x * x for x in v) ** 0.5 or 1.0
+            out.append([x / norm for x in v])  # unit length, so L2 distance orders like cosine
+        return out
 
 
 class Events(list):
@@ -201,10 +224,10 @@ def bible_call(bible=None):
 
 @pytest.fixture
 def make_server(factory, tmp_path):
-    def make(turn=(), plan=(), recap=(), web_dir=None):
+    def make(turn=(), plan=(), recap=(), web_dir=None, embedder=None):
         clients = SimpleNamespace(turn=FakeClaude(*turn), plan=FakeClaude(*plan), recap=FakeClaude(*recap))
         app = create_app(factory, turn_client=clients.turn, plan_client=clients.plan, recap_client=clients.recap,
-                         backup_dir=tmp_path / "backups", inline=True, web_dir=web_dir)
+                         backup_dir=tmp_path / "backups", inline=True, web_dir=web_dir, embedder=embedder)
         events = Events()
         app.state.broadcaster.subscribe(events)
         return SimpleNamespace(http=TestClient(app), events=events, backups=tmp_path / "backups", **vars(clients))

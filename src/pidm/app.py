@@ -33,6 +33,7 @@ from pidm.engine import hp_max, load_state, skill_list, speed
 from pidm.models import Campaign, Scene, Session, Turn
 from pidm.orchestrator import TurnOrchestrator, next_seq
 from pidm.prompts import OPENING, RESUME
+from pidm.recall import DEFAULT_MODEL, Embedder, FastEmbedder, embed_scene, reembed_stale
 from pidm.scenes import write_scene_summary
 from pidm.recap import ROLLING_EVERY, write_final_recap, write_rolling_recap
 from pidm.templates import TEMPLATES
@@ -135,11 +136,12 @@ def _conflict(message: str) -> HTTPException:
 
 def create_app(factory: sessionmaker, *, turn_client: ClaudeClient, plan_client: ClaudeClient,
                recap_client: ClaudeClient, backup_dir: str | Path, inline: bool = False, round_cap: int = 4,
-               context_budget: int = 8000, web_dir: str | Path | None = None, prompt_timeout: float = 600) -> FastAPI:
+               context_budget: int = 8000, web_dir: str | Path | None = None, prompt_timeout: float = 600,
+               embedder: Embedder | None = None) -> FastAPI:
     app = FastAPI(title="Pi Dungeon Master")
     emit = app.state.broadcaster = Broadcaster()
     orch = TurnOrchestrator(factory, turn_client, round_cap=round_cap, context_budget=context_budget,
-                            prompt_timeout=prompt_timeout)
+                            prompt_timeout=prompt_timeout, embedder=embedder)
     turns, jobs = Worker("turn", inline), Worker("job", inline)
     backup_dir = Path(backup_dir)
     # Held from an accepted request until its Turn ends, so a second action, a Session change or a direct
@@ -151,6 +153,9 @@ def create_app(factory: sessionmaker, *, turn_client: ClaudeClient, plan_client:
         for camp in db.scalars(select(Campaign).where(Campaign.status == "generating")):
             camp.status, camp.setup_error = "failed", "The server restarted while the bible was being generated."
         db.commit()
+
+    if embedder:  # on the job thread, so loading the model never delays startup
+        jobs.submit(reembed_stale, factory, embedder)
 
     # --- shared paths ---------------------------------------------------------------------
 
@@ -188,6 +193,8 @@ def create_app(factory: sessionmaker, *, turn_client: ClaudeClient, plan_client:
             for scene_id in db.scalars(select(Scene.id).where(Scene.session_id == session_id,
                                                                Scene.end_turn == turn.seq)):
                 jobs.submit(write_scene_summary, factory, recap_client, scene_id)
+                if embedder:
+                    jobs.submit(embed_scene, factory, embedder, scene_id)
             sess = db.get(Session, session_id)
             if sess.campaign.status == "complete" and sess.ended_at is None:
                 close_session(db, sess)  # an Ending closes the Session
@@ -502,10 +509,12 @@ def from_env() -> FastAPI:
     if os.environ.get("PIDM_FAKE_CLAUDE") == "1":
         from pidm.devclaude import DevClaude
         turn, plan, recap = DevClaude("turn"), DevClaude("plan"), DevClaude("recap")
+        embedder = None  # no model download in dev
     else:
         turn, plan, recap = AnthropicClient(), make_plan_client(), make_recap_client()
+        embedder = FastEmbedder(os.environ.get("PIDM_EMBED_MODEL", DEFAULT_MODEL))
     return create_app(open_db(db_path), turn_client=turn, plan_client=plan,
-                      recap_client=recap, backup_dir=os.environ.get("PIDM_BACKUP_DIR", "/backups"),
+                      recap_client=recap, embedder=embedder, backup_dir=os.environ.get("PIDM_BACKUP_DIR", "/backups"),
                       round_cap=int(os.environ.get("PIDM_ROUND_CAP", "4")),
                       context_budget=int(os.environ.get("PIDM_CONTEXT_BUDGET", "8000")),
                       web_dir=os.environ.get("PIDM_WEB_DIR", "src/web/dist"))
