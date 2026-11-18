@@ -115,7 +115,7 @@ def _srd_monsters() -> dict[str, tuple[float, int]]:
 
 
 def _solo_budget(b: Bible) -> list[str]:
-    """Solo budget (GLOSSARY): the Character's level is taken as the Encounter's Act number, so for level L an
+    """Solo budget (GLOSSARY, R21): the Character's level is taken as the Encounter's Act number, so for level L an
     Encounter has at most MAX_MONSTERS monsters, none above CR L/2, worth at most 50*L XP in all (the DMG's
     medium-difficulty XP threshold for one character). Count and CR matter, not only HP: one failed save against
     paralysis or a stun ends a fight that has no ally."""

@@ -141,6 +141,7 @@ def with_encounter(monsters):
     return b
 
 
+# R21: the Solo budget.
 def test_the_generation_prompt_states_the_solo_budget(factory):
     claude = FakeClaude(bible_call(fixture_bible()))
     start_campaign(factory, SETUP, "fighter", None, client=claude)
