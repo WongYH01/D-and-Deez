@@ -148,7 +148,10 @@ function StoryLog({ turns, thinking, locked, onRetry }: {
   onRetry: (t: LogTurn) => void;
 }) {
   const end = useRef<HTMLDivElement>(null);
-  useEffect(() => end.current?.scrollIntoView?.({ block: "end" }), [turns, thinking]);
+  // Braces: Chrome's scrollIntoView returns a Promise, which React would call as the cleanup.
+  useEffect(() => {
+    end.current?.scrollIntoView?.({ block: "end" });
+  }, [turns, thinking]);
   return (
     <div className="max-h-[70svh] min-h-64 space-y-4 overflow-y-auto rounded-lg border p-4 font-serif leading-relaxed"
       aria-live="polite">

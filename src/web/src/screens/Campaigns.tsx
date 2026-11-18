@@ -2,17 +2,18 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 
 /** One entry of `GET /campaigns`. */
-type CampaignView = {
+export type CampaignView = {
   id: number;
   name: string;
   status: "generating" | "ready" | "active" | "complete" | "failed";
   length: string;
+  premise: string | null;
   ending: string | null;
   setup_error: string;
 };
 
 /** The server's refusal (a 404 or 409 `detail`) as a readable message. */
-async function refusal(r: Response, fallback: string): Promise<string> {
+export async function refusal(r: Response, fallback: string): Promise<string> {
   const detail = (await r.json().catch(() => ({}))).detail;
   return typeof detail === "string" ? detail : fallback;
 }

@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { About } from "@/screens/About";
 import { Campaigns } from "@/screens/Campaigns";
 import { Play } from "@/screens/Play";
+import { Setup } from "@/screens/Setup";
 
 const SCREENS = ["play", "campaigns", "about", "setup"] as const;
 export type Screen = (typeof SCREENS)[number];
@@ -30,10 +31,6 @@ async function endSession() {
   else alert((await r.json()).detail ?? "The Session could not be ended.");
 }
 
-function Placeholder({ title }: { title: string }) {
-  return <h1 className="font-heading text-2xl">{title}</h1>;
-}
-
 export function App() {
   const screen = useScreen();
   return (
@@ -56,7 +53,7 @@ export function App() {
         {screen === "about" && <About />}
         {screen === "play" && <Play />}
         {screen === "campaigns" && <Campaigns />}
-        {screen === "setup" && <Placeholder title="New campaign" />}
+        {screen === "setup" && <Setup />}
       </main>
     </div>
   );
