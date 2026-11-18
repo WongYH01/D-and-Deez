@@ -1,44 +1,39 @@
 # D-and-Deez
+
 Computah, generate me a D&amp;D that doesn't use all my credits & turn my pi into smth that's not a smart mirror
 
-## Build, run and test
+Pi Dungeon Master is a single-player, text-based D&D 5e game that runs as a web app. Claude narrates; the app's own code is the referee and story planner.
 
-The app runs as one Docker image, built locally on each machine (PC: linux/amd64, Raspberry Pi 5: linux/arm64, 64-bit OS).
+## Features
+
+- Play in the browser: type an action, read streamed narration, watch the character sheet update.
+- Code, not the model, rolls the dice and tracks HP, conditions, XP, inventory and spell slots (SRD 5.1 rules, fantasy only).
+- Pick a setting, tone and length (one-shot or short campaign), and a pre-made class to play.
+- Each campaign gets a hidden plot with clues, clocks and defined endings, so the story can't dead-end. Fights are sized for one character.
+- Or import a published adventure from a PDF or text file.
+- Continuity across sessions: recaps, remembered NPCs and places, and recall of similar past scenes.
+- One Docker image that runs on a PC or a Raspberry Pi 5. No local LLM; Claude is called through the Anthropic API.
+
+## What you need
+
+- Docker with Compose (64-bit OS on a Raspberry Pi 5).
+- An [Anthropic API key](https://console.anthropic.com/).
+
+## Run it
 
 First time on a machine:
 
 ```sh
-cp .env.example .env        # then fill in ANTHROPIC_API_KEY
+cp .env.example .env        # then set ANTHROPIC_API_KEY in .env
 mkdir -p data backups       # create before the first `up`, or Docker creates them owned by root
 ```
 
-Run, and after every code change or `git pull`:
+Start it, and again after every `git pull`:
 
 ```sh
 docker compose up -d --build
-curl -i http://localhost:8000/health   # expect 200
 ```
 
-Play over HTTP (the web UI comes in M5). Keep one terminal on the event stream:
+Open <http://localhost:8000> (on a Pi, `http://<pi-address>:8000`). `curl -i http://localhost:8000/health` returns 200 when it is up.
 
-```sh
-curl -N http://localhost:8000/events
-```
-
-and drive the game from another:
-
-```sh
-curl -X POST localhost:8000/campaigns -H 'Content-Type: application/json'   -d '{"setting": "dark fantasy", "tone": "grim", "length": "one-shot", "template": "rogue"}'
-curl localhost:8000/campaigns                     # poll until the status is ready, then read the premise
-curl -X POST localhost:8000/session/start -H 'Content-Type: application/json' -d '{"campaign_id": 1}'
-curl -X POST localhost:8000/action -H 'Content-Type: application/json' -d '{"text": "I look around"}'
-curl -X POST localhost:8000/session/end           # writes the Final recap and a backup
-```
-
-Tests run on the host, not in the image (the image has no test dependencies):
-
-```sh
-python -m venv .venv
-.venv/bin/pip install -e ".[dev]"      # Windows: .venv\Scripts\pip
-.venv/bin/pytest
-```
+Your campaigns are saved in `data/`, and a backup is written to `backups/` when a session ends. Optional settings (models, token budget) are in `.env.example`.
