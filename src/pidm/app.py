@@ -20,6 +20,7 @@ from typing import Callable, Literal
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import sessionmaker
@@ -115,7 +116,7 @@ def _conflict(message: str) -> HTTPException:
 
 def create_app(factory: sessionmaker, *, turn_client: ClaudeClient, plan_client: ClaudeClient,
                recap_client: ClaudeClient, backup_dir: str | Path, inline: bool = False, round_cap: int = 4,
-               context_budget: int = 8000) -> FastAPI:
+               context_budget: int = 8000, web_dir: str | Path | None = None) -> FastAPI:
     app = FastAPI(title="Pi Dungeon Master")
     emit = app.state.broadcaster = Broadcaster()
     orch = TurnOrchestrator(factory, turn_client, round_cap=round_cap, context_budget=context_budget)
@@ -406,14 +407,20 @@ def create_app(factory: sessionmaker, *, turn_client: ClaudeClient, plan_client:
 
         return StreamingResponse(stream(), media_type="text/event-stream", headers={"Cache-Control": "no-cache"})
 
+    # Mounted last so every API route above wins; without a built bundle the API runs alone.
+    if web_dir is not None and Path(web_dir).is_dir():
+        app.mount("/", StaticFiles(directory=web_dir, html=True), name="web")
+
     return app
 
 
 def from_env() -> FastAPI:
-    """The real app: SQLite at PIDM_DB, backups in PIDM_BACKUP_DIR, Claude clients from the environment."""
+    """The real app: SQLite at PIDM_DB, backups in PIDM_BACKUP_DIR, the web bundle from PIDM_WEB_DIR, Claude clients
+    from the environment."""
     db_path = os.environ.get("PIDM_DB", "data/pidm.sqlite")
     os.makedirs(os.path.dirname(os.path.abspath(db_path)), exist_ok=True)
     return create_app(open_db(db_path), turn_client=AnthropicClient(), plan_client=make_plan_client(),
                       recap_client=make_recap_client(), backup_dir=os.environ.get("PIDM_BACKUP_DIR", "/backups"),
                       round_cap=int(os.environ.get("PIDM_ROUND_CAP", "4")),
-                      context_budget=int(os.environ.get("PIDM_CONTEXT_BUDGET", "8000")))
+                      context_budget=int(os.environ.get("PIDM_CONTEXT_BUDGET", "8000")),
+                      web_dir=os.environ.get("PIDM_WEB_DIR", "src/web/dist"))

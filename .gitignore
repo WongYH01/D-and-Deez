@@ -169,3 +169,8 @@ cython_debug/
 # Pi Dungeon Master runtime folders
 /data/
 /backups/
+
+# Web UI (src/web); `dist/` above already covers its build. `lib/` above is for Python builds, not the UI's source.
+node_modules/
+*.tsbuildinfo
+!src/web/src/lib/

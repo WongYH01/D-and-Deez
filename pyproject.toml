@@ -15,6 +15,10 @@ dev = ["pytest", "httpx"]
 [project.scripts]
 pidm-play = "pidm.cli:main"
 
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["pidm*"]  # never package the web UI in src/web
+
 [tool.setuptools.package-data]
 pidm = ["data/*.json", "migrations/*.mako", "migrations/versions/*.py"]
 

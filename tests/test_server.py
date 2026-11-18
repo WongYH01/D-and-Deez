@@ -30,10 +30,10 @@ def bible_call(bible=None):
 
 @pytest.fixture
 def make_server(factory, tmp_path):
-    def make(turn=(), plan=(), recap=()):
+    def make(turn=(), plan=(), recap=(), web_dir=None):
         clients = SimpleNamespace(turn=FakeClaude(*turn), plan=FakeClaude(*plan), recap=FakeClaude(*recap))
         app = create_app(factory, turn_client=clients.turn, plan_client=clients.plan, recap_client=clients.recap,
-                         backup_dir=tmp_path / "backups", inline=True)
+                         backup_dir=tmp_path / "backups", inline=True, web_dir=web_dir)
         events = Events()
         app.state.broadcaster.subscribe(events)
         return SimpleNamespace(http=TestClient(app), events=events, backups=tmp_path / "backups", **vars(clients))
@@ -388,3 +388,21 @@ def test_events_reach_an_sse_stream_over_the_wire(factory, tmp_path):
     finally:
         srv.should_exit = True
         thread.join(5)
+
+
+# --- web bundle ---------------------------------------------------------------------------------
+
+def test_the_web_bundle_is_served_at_root_without_shadowing_the_api(make_server, tmp_path):
+    (tmp_path / "web").mkdir()
+    (tmp_path / "web" / "index.html").write_text("<!doctype html><title>Pi Dungeon Master</title>")
+    http = make_server(web_dir=tmp_path / "web").http
+    r = http.get("/")
+    assert r.status_code == 200 and "<title>Pi Dungeon Master</title>" in r.text
+    assert http.get("/health").json() == {"status": "ok"}
+    assert http.get("/campaigns").json() == []
+
+
+def test_root_is_absent_when_the_web_bundle_folder_is_missing(make_server, tmp_path):
+    http = make_server(web_dir=tmp_path / "missing").http
+    assert http.get("/").status_code == 404
+    assert http.get("/health").json() == {"status": "ok"}

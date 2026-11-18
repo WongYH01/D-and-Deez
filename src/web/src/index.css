@@ -1,0 +1,90 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+/* Dark first: `dark:` utilities follow the system theme; light is the automatic alternative. */
+@custom-variant dark (@media (prefers-color-scheme: dark));
+
+@theme inline {
+  --font-sans: "Inter Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-serif: "Literata Variable", ui-serif, Georgia, serif;
+  --font-heading: var(--font-serif);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --color-foreground: var(--foreground);
+  --color-background: var(--background);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+}
+
+/* Tabletop at night: deep ink, warm parchment text, one candle-amber accent. */
+:root {
+  color-scheme: dark;
+  --radius: 0.5rem;
+  --background: oklch(0.17 0.02 265);
+  --foreground: oklch(0.91 0.03 85);
+  --card: oklch(0.21 0.02 265);
+  --card-foreground: var(--foreground);
+  --popover: oklch(0.21 0.02 265);
+  --popover-foreground: var(--foreground);
+  --primary: oklch(0.78 0.13 70);
+  --primary-foreground: oklch(0.18 0.02 265);
+  --secondary: oklch(0.26 0.02 265);
+  --secondary-foreground: var(--foreground);
+  --muted: oklch(0.26 0.02 265);
+  --muted-foreground: oklch(0.72 0.03 85);
+  --accent: oklch(0.26 0.02 265);
+  --accent-foreground: var(--foreground);
+  --destructive: oklch(0.7 0.19 25);
+  --border: oklch(0.91 0.03 85 / 12%);
+  --input: oklch(0.91 0.03 85 / 16%);
+  --ring: oklch(0.78 0.13 70 / 60%);
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    color-scheme: light;
+    --background: oklch(0.96 0.02 85);
+    --foreground: oklch(0.24 0.03 265);
+    --card: oklch(0.98 0.015 85);
+    --popover: oklch(0.98 0.015 85);
+    --primary: oklch(0.55 0.15 55);
+    --primary-foreground: oklch(0.98 0.015 85);
+    --secondary: oklch(0.91 0.025 85);
+    --muted: oklch(0.91 0.025 85);
+    --muted-foreground: oklch(0.45 0.03 265);
+    --accent: oklch(0.91 0.025 85);
+    --destructive: oklch(0.55 0.2 27);
+    --border: oklch(0.24 0.03 265 / 14%);
+    --input: oklch(0.24 0.03 265 / 20%);
+    --ring: oklch(0.55 0.15 55 / 60%);
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html {
+    @apply font-sans;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
