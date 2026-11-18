@@ -1,6 +1,10 @@
 """Scripted Claude clients for checking the web UI by hand with no API key: `PIDM_FAKE_CLAUDE=1` (see `from_env`).
 
 Campaign creation (the setup wizard at `#/setup`) gets the test fixture bible; each later bible adds "(take N)" to its premise.
+To reach the Play screen without the wizard, create a Campaign, wait until `GET /campaigns` shows it "ready", and open a Session:
+    curl -X POST localhost:8000/campaigns -H 'Content-Type: application/json' -d '{"setting":"Reed Shore","tone":"grim","length":"one-shot","template":"fighter","character_name":"Ada"}'
+    curl localhost:8000/campaigns
+    curl -X POST localhost:8000/session/start -H 'Content-Type: application/json' -d '{"campaign_id":1}'
 
 Each Turn answers by the player's action:
 - an action containing "fail" fails the Turn (an `error` event, then Retry);
