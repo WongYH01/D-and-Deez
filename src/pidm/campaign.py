@@ -8,13 +8,14 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from typing import Callable
 
 from sqlalchemy.orm import sessionmaker
 
 from pidm.bible import ACTS, Bible, validate
 from pidm.claude import ClaudeClient
 from pidm.memory import seed_entities
-from pidm.models import Beat, Campaign, Clock, Clue, Secret, Session
+from pidm.models import Beat, BibleVersion, Campaign, Clock, Clue, Secret, Session
 from pidm.story import end
 from pidm.templates import create_character
 
@@ -65,19 +66,21 @@ def _request(setup: Setup) -> str:
             f"Character backstory hook: {setup.hook or 'none'}")
 
 
-def _generate(client: ClaudeClient, setup: Setup) -> Bible:
-    tools = [{"name": PLAN_TOOL, "description": "Submit the complete Campaign bible.",
+def ask_bible(client: ClaudeClient, system: str, request: str, tool: str,
+              accept: Callable[[object], tuple[Bible | None, list[str]]]) -> Bible:
+    """Ask for a bible through `tool`, feeding `accept`'s errors back up to ATTEMPTS times."""
+    tools = [{"name": tool, "description": "Submit the complete Campaign bible.",
               "input_schema": Bible.model_json_schema()}]
-    messages: list[dict] = [{"role": "user", "content": _request(setup)}]
+    messages: list[dict] = [{"role": "user", "content": request}]
     errors: list[str] = []
     for _ in range(ATTEMPTS):
-        reply = client.send(system=PLAN_SYSTEM, messages=messages, tools=tools, tools_enabled=True, on_text=None,
-                            force_tool=PLAN_TOOL)
-        call = next((b for b in reply.content if b["type"] == "tool_use" and b["name"] == PLAN_TOOL), None)
-        bible, errors = validate(call["input"] if call else None, setup.length)
+        reply = client.send(system=system, messages=messages, tools=tools, tools_enabled=True, on_text=None,
+                            force_tool=tool)
+        call = next((b for b in reply.content if b["type"] == "tool_use" and b["name"] == tool), None)
+        bible, errors = accept(call["input"] if call else None)
         if bible:
             return bible
-        feedback = "The bible failed these checks; call write_campaign_bible again with a corrected bible:\n- " + \
+        feedback = f"The bible failed these checks; call {tool} again with a corrected bible:\n- " + \
             "\n- ".join(errors)
         # The API wants a tool_result for every tool_use in the reply, and the model may call the tool more than once.
         results = [{"type": "tool_result", "tool_use_id": b["id"], "content": feedback, "is_error": True}
@@ -85,6 +88,10 @@ def _generate(client: ClaudeClient, setup: Setup) -> Bible:
         messages = messages + [{"role": "assistant", "content": reply.content},
                                {"role": "user", "content": results or feedback}]
     raise SetupError(f"No valid Campaign bible after {ATTEMPTS} attempts: {'; '.join(errors)}")
+
+
+def _generate(client: ClaudeClient, setup: Setup) -> Bible:
+    return ask_bible(client, PLAN_SYSTEM, _request(setup), PLAN_TOOL, lambda data: validate(data, setup.length))
 
 
 def new_campaign(setup: Setup, template: str, name: str | None, status: str) -> Campaign:
@@ -102,6 +109,7 @@ def setup_of(camp: Campaign) -> Setup:
 def _seed(camp: Campaign, bible: Bible) -> None:
     """Fill a Campaign row with its bible, story tables and Character."""
     camp.name, camp.premise, camp.bible = bible.title, bible.premise, bible.model_dump()
+    camp.bible_versions.append(BibleVersion(version=1, bible=camp.bible))
     camp.current_act, camp.current_location, camp.last_progress_turn = 1, bible.start_location, 0
     acts = {a.slug: n for n, a in enumerate(bible.acts, 1)}
     for n, act in enumerate(bible.acts, 1):
@@ -119,7 +127,7 @@ def _seed(camp: Campaign, bible: Bible) -> None:
 def clear_story(camp: Campaign) -> None:
     """Remove a `ready` Campaign's bible, story rows and Character so a new bible can be generated."""
     camp.beats, camp.secrets, camp.clocks, camp.quests = [], [], [], []
-    camp.entities, camp.facts, camp.dm_notes = [], [], []  # every table a Campaign owns must be listed here
+    camp.entities, camp.facts, camp.dm_notes, camp.bible_versions = [], [], [], []  # every table a Campaign owns must be listed here
     camp.character = None
     camp.name, camp.premise, camp.bible, camp.setup_error = "", "", None, ""
 

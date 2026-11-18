@@ -10,6 +10,7 @@ export type CampaignView = {
   premise: string | null;
   ending: string | null;
   setup_error: string;
+  adapted: boolean;
 };
 
 /** The server's refusal (a 404 or 409 `detail`) as a readable message. */
@@ -86,6 +87,7 @@ export function Campaigns() {
                   {c.status} · {c.length}
                   {c.ending && ` · ${c.ending}`}
                 </p>
+                {c.adapted && <p className="text-sm text-muted-foreground">The story adapted.</p>}
                 {c.status === "failed" && c.setup_error && (
                   <p className="text-sm text-destructive">{c.setup_error}</p>
                 )}

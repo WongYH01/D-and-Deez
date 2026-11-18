@@ -97,6 +97,7 @@ All data lives in one SQLite file in WAL mode on a mounted volume, so the sheet 
 | `facts` | subject\_id, relation, object\_id, valid\_from\_turn, valid\_to\_turn, source\_turn | Engine, worker | v2 |
 | `scene_vec` | scene\_id, embedding (sqlite-vec `vec0` table) | Worker | v2 |
 | `dm_notes` | id, campaign\_id, note, updated\_turn | Engine (`write_note`) | v2 |
+| `bible_versions` | id, campaign\_id, version, bible, diff, created\_at | Setup (version 1), replan job, rollback | v2 |
 | `spell_slots` | character\_id, level, max, used | Engine | v2 |
 
 From v2, adventure import adds `sources`, `source_chunks` (FTS5) and `campaigns.source_id`; see Adventure import.
@@ -235,7 +236,7 @@ Every turn the dynamic context carries a director block of about 150 to 300 toke
 
 Deferred to v2. In v1 the bible stays fixed for the whole campaign: three clues per secret and stall detection keep the plot moving when the player goes off-script, and a one-shot never needs a replan. From v2, at session end the background worker compares the bible with what actually happened and revises future beats, clues and clocks; for example, if the player killed the informant, his clues move elsewhere.
 
-The replan runs once per session end, as an ordinary background job after the Final recap. It changes only unplayed content: it never touches revealed Clues, completed Beats or the Endings' conditions. Each replan is saved as a new bible version, so a bad one can be rolled back. The player sees only a neutral "the story adapted" line in the Campaigns view; the full diff is logged server-side and is for the player to read after the Campaign ends.
+The replan runs once per session end, as an ordinary background job after the Final recap and before the backup; it is skipped for a session where the player took no action, and a failed or unchanged replan adds no version. Claude proposes a whole bible and the code merges it: only open Beats, unrevealed Clues and side Clocks with no progress come from the proposal, and the merged bible must pass the same checks as a generated one, with the errors fed back for up to 3 attempts. It changes only unplayed content: it never touches revealed Clues, completed Beats or the Endings' conditions. Each replan is saved as a new bible version, so a bad one can be rolled back (`pidm.replan.rollback` re-applies an earlier version's unplayed content as a new version; there is no endpoint yet). `Campaign.bible` always holds the latest version, which is what play uses. The next session's opening waits in the job queue behind the replan, and no Turn runs while no session is open, so a replan never overlaps a Turn. The player sees only a neutral "the story adapted" line in the Campaigns view (`adapted` on `GET /campaigns` is a flag, never the diff); the full diff is logged server-side and is for the player to read after the Campaign ends.
 
 ### 6. Ending
 
@@ -361,7 +362,7 @@ The browser sends commands over plain HTTP and receives everything a turn produc
 | `POST /campaigns` | Create a campaign from the setup form; a job generates the bible and validates it | 202 with `campaign_id`; status is `generating`, then `ready` (premise shown) or `failed` (with `setup_error`) |
 | `POST /campaigns/{id}/regenerate` | Replace a `ready` campaign's bible with a new one | 202; status returns to `generating` |
 | `POST /campaigns/{id}/retire` | The player ends the campaign: Retired, no Claude call | 200; 409 while a turn is running |
-| `GET /campaigns` | List campaigns and their status | JSON |
+| `GET /campaigns` | List campaigns and their status, with `adapted` (true once a replan saved a new bible version) | JSON |
 | `GET /state` | Sheet (with ability scores, saves, all skills, speed and Features), conditions, inventory, quests, encounter, visible clocks, `running_turn_seq`, `pending_prompt` (the open Roll prompt or `null`), `auto_roll` | JSON; 404 if no session is open. `encounter` is `null` outside a fight, else `{round, active, order: [{name, initiative, conditions, health}]}`: the Character and the Combatants in initiative order, `health` one of unhurt, wounded, bloodied, down. HP and AC are never sent |
 | `GET /log?session=<id>` | Committed turns and rolls for a session | JSON |
 | `POST /action` | Submit `{text}` for the open session | 202 with `turn_seq`; 409 if a turn is running or no session is open |

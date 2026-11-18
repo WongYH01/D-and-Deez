@@ -4,7 +4,7 @@ import { fakeServer } from "@/test/server";
 import { Setup } from "./Setup";
 
 const campaign = (status: string, extra: object = {}) => ({
-  id: 7, name: "", status, length: "one-shot", premise: null, ending: null, setup_error: "", ...extra,
+  id: 7, name: "", status, length: "one-shot", premise: null, ending: null, setup_error: "", adapted: false, ...extra,
 });
 
 /** GET /campaigns answers each list in turn, then repeats the last. */

@@ -57,6 +57,22 @@ class Campaign(Base):
     entities: Mapped[list["Entity"]] = relationship(back_populates="campaign", cascade="all, delete-orphan", order_by="Entity.id")
     facts: Mapped[list["Fact"]] = relationship(back_populates="campaign", cascade="all, delete-orphan", order_by="Fact.id")
     dm_notes: Mapped[list["DmNote"]] = relationship(back_populates="campaign", cascade="all, delete-orphan", order_by="DmNote.id")
+    bible_versions: Mapped[list["BibleVersion"]] = relationship(
+        back_populates="campaign", cascade="all, delete-orphan", order_by="BibleVersion.version")
+
+
+class BibleVersion(Base):
+    """One saved bible: version 1 is the generated one, each replan or rollback adds the next. `Campaign.bible` always
+    holds the latest, which is what play uses. `diff` is the spoiler text of the change, for the server log and for
+    the player after the Campaign ends."""
+    __tablename__ = "bible_versions"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    campaign_id: Mapped[int] = mapped_column(ForeignKey("campaigns.id"))
+    version: Mapped[int] = mapped_column(Integer)
+    bible: Mapped[dict] = mapped_column(JSON)
+    diff: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    campaign: Mapped[Campaign] = relationship(back_populates="bible_versions")
 
 
 class Character(Base):

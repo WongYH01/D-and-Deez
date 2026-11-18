@@ -2,7 +2,7 @@
 
 `create_app` builds the app from injected parts (Seam 4); `from_env` builds it with real Claude clients for
 uvicorn (`uvicorn pidm.app:from_env --factory`). Turns, opening Turns and resume Turns run on the turn thread;
-bible generation, Recaps and backups run in order on the job thread (ADR 0001). With `inline`, both run on
+bible generation, Recaps, replans and backups run in order on the job thread (ADR 0001). With `inline`, both run on
 the request thread before the response returns.
 """
 
@@ -35,6 +35,7 @@ from pidm.orchestrator import TurnOrchestrator, next_seq
 from pidm.prompts import OPENING, RESUME
 from pidm.recall import DEFAULT_MODEL, Embedder, FastEmbedder, embed_scene, reembed_stale
 from pidm.scenes import write_scene_summary
+from pidm.replan import replan
 from pidm.recap import ROLLING_EVERY, write_final_recap, write_rolling_recap
 from pidm.templates import TEMPLATES
 from pidm.tools import snapshot
@@ -174,6 +175,7 @@ def create_app(factory: sessionmaker, *, turn_client: ClaudeClient, plan_client:
 
     def close_job(session_id: int) -> None:
         write_final_recap(factory, recap_client, session_id)
+        replan(factory, plan_client, session_id)
         backup(session_id)
 
     def close_session(db, sess: Session) -> None:
@@ -268,7 +270,8 @@ def create_app(factory: sessionmaker, *, turn_client: ClaudeClient, plan_client:
         with factory() as db:
             return [{"id": c.id, "name": c.name, "status": c.status, "length": c.length,
                      "premise": c.premise if c.status in ("ready", "active", "complete") else None,
-                     "ending": c.ending, "setup_error": c.setup_error}
+                     "ending": c.ending, "setup_error": c.setup_error,
+                     "adapted": len(c.bible_versions) > 1}  # a flag only: the diff stays server-side
                     for c in db.scalars(select(Campaign).order_by(Campaign.id))]
 
     @app.post("/campaigns/{campaign_id}/regenerate", status_code=202)
