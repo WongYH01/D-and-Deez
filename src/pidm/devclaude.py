@@ -1,6 +1,6 @@
 """Scripted Claude clients for checking the web UI by hand with no API key: `PIDM_FAKE_CLAUDE=1` (see `from_env`).
 
-Campaign creation (the setup wizard at `#/setup`) gets the test fixture bible, so Regenerate shows the same premise.
+Campaign creation (the setup wizard at `#/setup`) gets the test fixture bible; each later bible adds "(take N)" to its premise.
 
 Each Turn answers by the player's action:
 - an action containing "fail" fails the Turn (an `error` event, then Retry);
@@ -40,11 +40,16 @@ class DevClaude:
     def __init__(self, role: Literal["turn", "plan", "recap"]):
         self.role = role
         self.delay = float(os.environ.get("PIDM_FAKE_DELAY", "1"))
+        self.takes = 0  # bibles generated, across all Campaigns
 
     def send(self, *, system, messages, tools, tools_enabled, on_text=None, force_tool=None) -> Reply:
         time.sleep(self.delay)
         if self.role == "plan":
-            return _tool(force_tool, json.loads(BIBLE.read_text(encoding="utf-8")))
+            bible = json.loads(BIBLE.read_text(encoding="utf-8"))
+            self.takes += 1
+            if self.takes > 1:  # so a Regenerate visibly replaces the premise
+                bible["premise"] += f" (take {self.takes})"
+            return _tool(force_tool, bible)
         if self.role == "recap":
             return _text("The hero arrived and looked around.")
         reply = self._turn(messages[-1]["content"], tools_enabled)

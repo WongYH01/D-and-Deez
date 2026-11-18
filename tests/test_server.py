@@ -447,3 +447,16 @@ def test_the_dev_clients_play_a_campaign_with_rolls_and_a_failed_turn(factory, t
     assert events.kinds() == ["error"]
     assert [t["player_text"] for t in http.get(f"/log?session={sid}").json()] == ["", "I roll to search"]
     assert http.post("/session/end").status_code == 202
+
+
+def test_the_dev_plan_client_gives_each_regeneration_a_new_premise(factory, tmp_path, monkeypatch):
+    monkeypatch.setenv("PIDM_FAKE_DELAY", "0")
+    app = create_app(factory, turn_client=DevClaude("turn"), plan_client=DevClaude("plan"),
+                     recap_client=DevClaude("recap"), backup_dir=tmp_path / "backups", inline=True)
+    http = TestClient(app)
+    cid = http.post("/campaigns", json=SETUP).json()["campaign_id"]
+    first = http.get("/campaigns").json()[0]["premise"]
+    http.post(f"/campaigns/{cid}/regenerate")
+    second = http.get("/campaigns").json()[0]["premise"]
+    assert first == fixture_bible()["premise"]
+    assert second == f"{first} (take 2)"

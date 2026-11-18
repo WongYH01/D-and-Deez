@@ -24,9 +24,15 @@ Set a Roll's `target` and `outcome` before calling `dice.record`: recording emit
 
 Tools change ORM objects loaded for the Turn; only the orchestrator commits a Turn (ADR 0002). Work outside a Turn (direct actions such as equip and retire, Session open and close, the bible and Recap jobs) commits its own short transaction, and a direct action that changes game state holds the server's busy lock so it never lands mid-Turn. Replace JSON columns (`conditions`, `flags`, `feature_uses`, `Encounter.state`) with a new value instead of mutating them in place, so SQLAlchemy sees the change.
 
-## Engine tests use the four seams
+## Tests use the six seams
 
 Tests call tools through `dispatch` with scripted dice (Seam 1), run the orchestrator with a fake Claude client (Seam 2), start a Campaign through `start_campaign` with a fake Claude client that returns bible tool calls (Seam 3), or drive the HTTP API through `TestClient` on an app built by `create_app` with fake Claude clients, a temporary database and backups folder, `inline` work and a test subscriber on the broadcaster (Seam 4). Expected numbers come from the SRD text or worked dice, never recomputed the way the code does. A test of a rule names the section or ruling it covers.
+
+UI tests fold actions through a reducer such as `foldLog` in `src/web/src/play/log.ts` (Seam 5), or render a screen with `fetch` stubbed by a route table, as `fakeServer` in `src/web/src/screens/Setup.test.tsx` does (Seam 6). Move `fakeServer` to a shared test helper when a second screen needs it.
+
+## Effect bodies use braces
+
+An expression-bodied `useEffect` returns its value as the cleanup, and React calls it on the next commit: Chrome's `scrollIntoView` returns a Promise, so `useEffect(() => el.scrollIntoView())` crashed the play screen while jsdom tests passed. Write `useEffect(() => { ... })`; the only value an effect returns is its cleanup function.
 
 ## UI state tolerates any arrival order
 
