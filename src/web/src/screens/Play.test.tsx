@@ -72,7 +72,7 @@ test("another tab's equip reaches this sheet through state_changed", async () =>
 
 test.each([
   ["a Turn is running", { running_turn_seq: 3 }],
-  ["an Encounter is active", { encounter: { round: 1, active: "Ada", order: [], combatants: [] } }],
+  ["an Encounter is active", { encounter: { round: 1, active: "Ada", order: [] } }],
 ])("Equip and Unequip are disabled while %s", async (_, extra) => {
   fakeEvents();
   fakeServer({ "GET /state": () => state([sword, { ...rations, equipped: true }], extra), "GET /log?session=1": () => [] });
@@ -131,4 +131,110 @@ test("a refusal without a JSON body still shows a notice", async () => {
   fireEvent.click(await screen.findByRole("button", { name: "Equip longsword" }));
 
   await screen.findByText("The server refused the change.");
+});
+
+test("the Encounter panel lists the fight in order, marks the active Combatant and follows state_changed", async () => {
+  const emit = fakeEvents();
+  const fight = (goblin: string, conditions: string[]) => ({
+    encounter: {
+      round: 2, active: "Goblin 1", order: [
+        { name: "Goblin 1", initiative: 15, conditions, health: goblin },
+        { name: "Ada", initiative: 12, conditions: [], health: "unhurt" },
+      ],
+    },
+  });
+  let current = state([], fight("wounded", []));
+  fakeServer({ "GET /state": () => current, "GET /log?session=1": () => [] });
+  render(<Play />);
+
+  const panel = await screen.findByRole("list", { name: "Encounter" });
+  const rows = within(panel).getAllByRole("listitem");
+  expect(rows.map((r) => r.textContent)).toEqual(["Goblin 1wounded", "Adaunhurt"]);
+  expect(rows[0].getAttribute("aria-current")).toBe("true");
+  expect(rows[1].getAttribute("aria-current")).toBeNull();
+  expect(screen.getByText("Round 2")).toBeTruthy();
+
+  current = state([], fight("down", ["prone"]));
+  emit("state_changed", { turn_seq: 4 });
+  await within(panel).findByText("down");
+  expect(within(panel).getByText("prone")).toBeTruthy();
+
+  current = state([]);
+  emit("state_changed", { turn_seq: 5 });
+  await vi.waitFor(() => expect(screen.queryByRole("list", { name: "Encounter" })).toBeNull());
+});
+
+test("each Visible clock shows its name and segments and fills on state_changed", async () => {
+  const emit = fakeEvents();
+  let current = state([], { clocks: [{ name: "The vote is called", filled: 1, segments: 4 }] });
+  fakeServer({ "GET /state": () => current, "GET /log?session=1": () => [] });
+  render(<Play />);
+
+  const clocks = await screen.findByRole("list", { name: "Clocks" });
+  expect(within(clocks).getByText("1/4")).toBeTruthy();
+  const meter = within(clocks).getByRole("meter", { name: "The vote is called" });
+  expect(meter.getAttribute("aria-valuenow")).toBe("1");
+  expect(meter.children).toHaveLength(4);
+
+  current = state([], { clocks: [{ name: "The vote is called", filled: 3, segments: 4 }] });
+  emit("state_changed", { turn_seq: 2 });
+  await within(clocks).findByText("3/4");
+});
+
+test("no Clocks panel shows when no Clock is visible", async () => {
+  fakeEvents();
+  fakeServer({ "GET /state": () => state([]), "GET /log?session=1": () => [] });
+  render(<Play />);
+  await screen.findByRole("list", { name: "Inventory" });
+  expect(screen.queryByRole("list", { name: "Clocks" })).toBeNull();
+});
+
+test("campaign_ended shows the Ending after the epilogue, locks input and offers New campaign", async () => {
+  const emit = fakeEvents();
+  fakeServer({ "GET /state": () => state([]), "GET /log?session=1": () => [
+    { seq: 4, player_text: "I strike the king", narration: "The king falls. Peace returns.", rolls: [] },
+  ] });
+  render(<Play />);
+  await screen.findByText("The king falls. Peace returns.");
+
+  emit("campaign_ended", { campaign_id: 1, ending: "victory" });
+
+  await screen.findByText("The Campaign has ended: Victory.");
+  expect((screen.getByLabelText("Your action") as HTMLInputElement).disabled).toBe(true);
+  expect(screen.getByText("New campaign").closest("a")!.getAttribute("href")).toBe("#/setup");
+});
+
+test("a Retired Ending from another tab stays on screen though the Session is gone", async () => {
+  const emit = fakeEvents();
+  let gone = false;
+  fakeServer({
+    "GET /state": () => (gone ? Response.json({ detail: "No Session is open." }, { status: 404 }) : state([])),
+    "GET /log?session=1": () => [],
+  });
+  location.hash = "#/play";
+  render(<Play />);
+  await screen.findByRole("list", { name: "Inventory" });
+
+  gone = true;
+  emit("state_changed", { turn_seq: null });
+  emit("campaign_ended", { campaign_id: 1, ending: "retired" });
+
+  await screen.findByText("The Campaign has ended: Retired.");
+  expect(location.hash).toBe("#/play");
+});
+
+test("on a phone the sheet is a drawer opened from a button", async () => {
+  vi.stubGlobal("matchMedia", () => ({ matches: false, addEventListener() {}, removeEventListener() {} }));
+  fakeEvents();
+  fakeServer({ "GET /state": () => state([sword]), "GET /log?session=1": () => [] });
+  render(<Play />);
+
+  await screen.findByRole("button", { name: "Character sheet" });
+  expect(screen.queryByRole("list", { name: "Inventory" })).toBeNull();
+
+  fireEvent.click(screen.getByRole("button", { name: "Character sheet" }));
+
+  const inventory = await screen.findByRole("list", { name: "Inventory" });
+  expect(within(inventory).getByText("longsword")).toBeTruthy();
+  expect(screen.getByRole("dialog")).toBeTruthy();
 });

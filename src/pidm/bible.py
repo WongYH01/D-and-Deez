@@ -45,6 +45,8 @@ class Clock(BaseModel):
     segments: int = Field(ge=4, le=12)
     consequence: str = Field(description="What happens when the Clock fills")
     main: bool = Field(default=False, description="True for the one Main clock: the antagonist's plan")
+    visible: bool = Field(default=False, description="True only if the Character would plainly know about this Clock, "
+                          "such as a public countdown; it is then shown to the player. Never true for the Main clock")
 
 
 class Npc(BaseModel):
@@ -87,7 +89,7 @@ class Bible(BaseModel):
 
 
 def check(b: Bible, length: str) -> list[str]:
-    """Human-readable errors for what the schema cannot express; empty when the bible is sound."""
+    """Human-readable errors for what the schema cannot express; empty when the bible is sound (Story design §2)."""
     errors = []
     if len(b.acts) != ACTS[length]:
         errors.append(f"A {length} needs {ACTS[length]} Act(s); the bible has {len(b.acts)}.")
@@ -130,6 +132,7 @@ def check(b: Bible, length: str) -> list[str]:
     mains = sum(c.main for c in b.clocks)
     if mains != 1:
         errors.append(f"The bible needs exactly one Main clock; it has {mains}.")
+    errors += [f"Main clock {c.slug} is visible; the Main clock must stay hidden." for c in b.clocks if c.main and c.visible]
     return errors
 
 

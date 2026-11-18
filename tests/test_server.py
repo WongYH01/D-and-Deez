@@ -20,7 +20,7 @@ from pidm.app import create_app
 from pidm.campaign import PLAN_TOOL
 from pidm.claude import ClaudeError, Usage
 from pidm.devclaude import DevClaude
-from pidm.models import Campaign, Character, Session, Turn
+from pidm.models import Campaign, Character, Combatant, Session, Turn
 
 from conftest import Events, FakeClaude, fixture_bible, text, tool
 
@@ -320,6 +320,19 @@ def test_retire_ends_the_campaign_and_closes_the_session(factory, server):
     assert server.http.post(f"/campaigns/{cid}/retire").status_code == 409
 
 
+def test_state_lists_only_visible_clocks_as_they_tick(server):
+    b = fixture_bible()
+    b["clocks"][1]["visible"] = True
+    server.plan.script.append(bible_call(b))
+    start(server, server.http.post("/campaigns", json=SETUP).json()["campaign_id"])
+    assert server.http.get("/state").json()["clocks"] == [
+        {"name": "The cult grows suspicious", "filled": 0, "segments": 4}]
+    act(server, "I wait", tool("tick_clock", clock="clock.suspicion", segments=2, reason="seen"),
+        tool("tick_clock", clock="clock.tide", segments=1, reason="time"), text("Eyes in the fog."))
+    assert server.http.get("/state").json()["clocks"] == [
+        {"name": "The cult grows suspicious", "filled": 2, "segments": 4}]
+
+
 def test_an_ending_sends_campaign_ended_and_closes_the_session(factory, server):
     cid = create(server)
     sid = start(server, cid)
@@ -369,8 +382,52 @@ def test_equip_is_refused_during_an_encounter(server):
     start(server, create(server))
     act(server, "I draw on the goblin", tool("start_encounter", monsters=[{"monster": "goblin"}]), text("A goblin!"))
     state = server.http.get("/state").json()
-    assert state["encounter"]["combatants"][0]["name"] == "Goblin 1"
+    assert "Goblin 1" in [c["name"] for c in state["encounter"]["order"]]
     assert server.http.post(f"/inventory/{item_id(state, 'leather')}/unequip").status_code == 409
+
+
+# --- Encounter panel ----------------------------------------------------------------------------
+
+def fight(s, count=3):
+    start(s, create(s))
+    act(s, "I draw on the goblins", tool("start_encounter", monsters=[{"monster": "goblin", "count": count}]),
+        text("Goblins!"))
+
+
+def test_state_has_no_encounter_without_a_fight(server):
+    start(server, create(server))
+    assert server.http.get("/state").json()["encounter"] is None
+
+
+def test_state_returns_the_encounter_in_initiative_order_without_hp_or_ac(server):
+    fight(server)
+    enc = server.http.get("/state").json()["encounter"]
+    names = [c["name"] for c in enc["order"]]
+    assert sorted(names) == ["Goblin 1", "Goblin 2", "Goblin 3", "Wren"]
+    inits = [c["initiative"] for c in enc["order"]]
+    assert inits == sorted(inits, reverse=True)
+    assert enc["round"] == 1 and enc["active"] in names
+    assert all(set(c) == {"name", "initiative", "conditions", "health"} for c in enc["order"])
+    assert set(enc) == {"round", "active", "order"}
+
+
+def test_each_health_word_is_returned_at_its_boundary(factory, server):
+    fight(server, count=4)
+    with factory() as db:
+        gobs = {c.name: c for c in db.scalars(select(Combatant))}
+        for name, hp, status in [("Goblin 1", 5, "active"), ("Goblin 2", 4, "active"),  # just above, exactly half
+                                 ("Goblin 3", 0, "dead"), ("Goblin 4", 0, "knocked_out")]:
+            gobs[name].hp, gobs[name].hp_max, gobs[name].status = hp, 8, status
+        db.commit()
+    health = {c["name"]: c["health"] for c in server.http.get("/state").json()["encounter"]["order"]}
+    assert health == {"Wren": "unhurt", "Goblin 1": "wounded", "Goblin 2": "bloodied", "Goblin 3": "down",
+                      "Goblin 4": "down"}
+
+
+def test_the_encounter_is_null_once_it_ends(server):
+    fight(server)
+    act(server, "They flee", tool("end_encounter"), text("Gone."))
+    assert server.http.get("/state").json()["encounter"] is None
 
 
 # --- SSE over the wire --------------------------------------------------------------------------
@@ -447,6 +504,29 @@ def test_the_dev_clients_play_a_campaign_with_rolls_and_a_failed_turn(factory, t
     assert events.kinds() == ["error"]
     assert [t["player_text"] for t in http.get(f"/log?session={sid}").json()] == ["", "I roll to search"]
     assert http.post("/session/end").status_code == 202
+
+
+def test_the_dev_clients_start_hurt_and_end_a_fight(factory, tmp_path, monkeypatch):
+    monkeypatch.setenv("PIDM_FAKE_DELAY", "0")
+    app = create_app(factory, turn_client=DevClaude("turn"), plan_client=DevClaude("plan"),
+                     recap_client=DevClaude("recap"), backup_dir=tmp_path / "backups", inline=True)
+    http = TestClient(app)
+    cid = http.post("/campaigns", json=SETUP).json()["campaign_id"]
+    http.post("/session/start", json={"campaign_id": cid})
+
+    def goblin_1():
+        return next(c["health"] for c in http.get("/state").json()["encounter"]["order"] if c["name"] == "Goblin 1")
+
+    http.post("/action", json={"text": "I fight"})
+    assert goblin_1() == "unhurt"
+    http.post("/action", json={"text": "I hit it"})
+    assert goblin_1() == "wounded"
+    http.post("/action", json={"text": "I hit it"})
+    assert goblin_1() == "bloodied"
+    http.post("/action", json={"text": "I hit it"})
+    assert goblin_1() == "down"
+    http.post("/action", json={"text": "They flee"})
+    assert http.get("/state").json()["encounter"] is None
 
 
 def test_the_dev_plan_client_gives_each_regeneration_a_new_premise(factory, tmp_path, monkeypatch):

@@ -34,9 +34,9 @@ async function endSession() {
 export function App() {
   const screen = useScreen();
   return (
-    <div className="min-h-svh">
-      <header className="flex items-center gap-2 border-b px-4 py-2">
-        <a href="#/play" className="mr-auto font-heading text-lg text-primary">
+    <div className="flex h-dvh flex-col md:h-auto md:min-h-svh">
+      <header className="flex shrink-0 items-center gap-1 border-b px-2 py-2 sm:gap-2 sm:px-4">
+        <a href="#/play" className="mr-auto min-w-0 truncate font-heading text-lg text-primary">
           Pi Dungeon Master
         </a>
         <Button variant="ghost" render={<a href="#/campaigns" />} nativeButton={false}>
@@ -49,7 +49,7 @@ export function App() {
           About
         </Button>
       </header>
-      <main className="mx-auto max-w-5xl p-4">
+      <main className="mx-auto min-h-0 w-full max-w-5xl flex-1 overflow-y-auto p-4 md:overflow-visible">
         {screen === "about" && <About />}
         {screen === "play" && <Play />}
         {screen === "campaigns" && <Campaigns />}
