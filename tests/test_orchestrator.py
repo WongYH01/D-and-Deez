@@ -299,6 +299,40 @@ def test_play_stops_at_defeat_even_when_claude_skips_end_campaign(factory, story
     assert len(claude.requests) == 4 and len(turns(factory, sid)) == 2
 
 
+def test_character_death_ends_the_campaign_as_fallen_hero_after_the_narration(factory, story_world):
+    sid = story_world()
+    claude = FakeClaude(tool("apply_damage", target="character", amount="99", damage_type="fire"), text("Bram falls."))
+    orch = TurnOrchestrator(factory, claude)
+    ev = Events()
+    turn = orch.run_turn(sid, "I touch the brazier", ev)
+    assert turn.status == "committed" and turn.narration == "Bram falls."
+    assert ev[-1] == ("campaign_ended", {"campaign_id": 1, "ending": "fallen_hero"})
+    assert (campaign(factory, sid).status, campaign(factory, sid).ending) == ("complete", "fallen_hero")
+    with pytest.raises(CampaignEnded):
+        orch.run_turn(sid, "I keep going", Events())
+    assert len(claude.requests) == 2
+
+
+def test_claude_ending_a_dead_characters_campaign_is_not_applied_twice(factory, story_world):
+    sid = story_world()
+    claude = FakeClaude(tool("apply_damage", target="character", amount="99", damage_type="fire"),
+                        tool("end_campaign", ending="fallen_hero"), text("Bram falls."))
+    ev = Events()
+    TurnOrchestrator(factory, claude).run_turn(sid, "I touch the brazier", ev)
+    assert ev.kinds().count("campaign_ended") == 1
+    assert campaign(factory, sid).ending == "fallen_hero"
+
+
+def test_a_dying_character_does_not_end_the_campaign(factory, story_world):
+    sid = story_world()
+    claude = FakeClaude(tool("apply_damage", target="character", amount="12", damage_type="slashing"),
+                        text("Bram collapses."))
+    ev = Events()
+    TurnOrchestrator(factory, claude, rng=scripted_rng([10, 15, 9, 12, 3])).run_turn(sid, "I charge", ev)
+    assert "campaign_ended" not in ev.kinds()
+    assert campaign(factory, sid).ending is None
+
+
 def test_a_failed_turn_leaves_the_story_unchanged(factory, story_world):
     sid = story_world()
     claude = FakeClaude([tool("reveal_clue", clue="clue.sluice.3"), tool("move_to", location="loc.mill")],
