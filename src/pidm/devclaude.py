@@ -1,6 +1,9 @@
 """Scripted Claude clients for checking the web UI by hand with no API key: `PIDM_FAKE_CLAUDE=1` (see `from_env`).
 
-Campaign creation gets the test fixture bible. Each Turn answers by the player's action:
+Campaign creation gets the test fixture bible. Until the setup wizard exists, seed a ready Campaign with:
+    curl -X POST localhost:8000/campaigns -H 'Content-Type: application/json' -d '{"setting":"Reed Shore","tone":"grim","length":"one-shot","template":"fighter"}'
+
+Each Turn answers by the player's action:
 - an action containing "fail" fails the Turn (an `error` event, then Retry);
 - an action containing "roll" makes a Perception check first (a `roll` line);
 - anything else gets a short Narration.
