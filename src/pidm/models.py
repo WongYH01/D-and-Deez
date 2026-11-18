@@ -93,8 +93,12 @@ class Character(Base):
     feature_uses: Mapped[dict] = mapped_column(JSON, default=dict)
     # Short-lived combat flags: hidden, dodging, raging, frenzy, rage_rounds, reckless.
     flags: Mapped[dict] = mapped_column(JSON, default=dict)
+    # A caster's known spells by slug: {"cantrips": [...], "spellbook": [...], "prepared": [...]}; {} for non-casters.
+    spells: Mapped[dict] = mapped_column(JSON, default=dict)
 
     campaign: Mapped[Campaign] = relationship(back_populates="character")
+    spell_slots: Mapped[list["SpellSlot"]] = relationship(
+        back_populates="character", cascade="all, delete-orphan", order_by="SpellSlot.level")
     skills: Mapped[list["Skill"]] = relationship(back_populates="character", cascade="all, delete-orphan")
     inventory: Mapped[list["InventoryItem"]] = relationship(
         back_populates="character", cascade="all, delete-orphan", order_by="InventoryItem.id")
@@ -110,6 +114,15 @@ class Skill(Base):
     proficient: Mapped[bool] = mapped_column(Boolean, default=True)
     expertise: Mapped[bool] = mapped_column(Boolean, default=False)
     character: Mapped[Character] = relationship(back_populates="skills")
+
+
+class SpellSlot(Base):
+    __tablename__ = "spell_slots"
+    character_id: Mapped[int] = mapped_column(ForeignKey("characters.id"), primary_key=True)
+    level: Mapped[int] = mapped_column(Integer, primary_key=True)  # the slot's spell level
+    max: Mapped[int] = mapped_column(Integer)
+    used: Mapped[int] = mapped_column(Integer, default=0)
+    character: Mapped[Character] = relationship(back_populates="spell_slots")
 
 
 class InventoryItem(Base):

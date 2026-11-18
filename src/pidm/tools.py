@@ -20,7 +20,7 @@ from pidm.engine import (
     passive_perception, prof, prone_rider, resolve_dying, ready_to_flee, remove_condition, resist_character, save_bonus,
     set_flag,
 )
-from pidm.models import Combatant, Encounter, InventoryItem, Quest, SrdItem, SrdMonster, SrdSpell
+from pidm.models import Combatant, Encounter, InventoryItem, Quest, SpellSlot, SrdItem, SrdMonster, SrdSpell
 from pidm.memory import KINDS, t_add_fact, t_retire_fact, t_write_note
 from pidm.scenes import t_end_scene
 from pidm.story import ENDINGS, t_advance_beat, t_end_campaign, t_move_to, t_reveal_clue, t_tick_clock
@@ -962,8 +962,21 @@ def t_rest(state: GameState, kind: str, hit_dice: int = 0) -> dict:
         ch.hit_dice -= spend
         for f in ("second_wind", "action_surge"):
             uses.pop(f, None)  # recover on a short or long rest (§9.2)
+        out = {"kind": "short", "hit_dice_spent": spend, "healed": healed, "hp": ch.hp_current, "hit_dice_left": ch.hit_dice}
+        if ch.char_class == "wizard" and not uses.get("arcane_recovery"):
+            # Arcane Recovery (SRD Wizard): once per day, slots of combined level up to half the Wizard's level
+            # rounded up, none 6th or higher. shortcut: the engine picks the highest slots that fit, never asks.
+            budget, got = (ch.level + 1) // 2, []
+            for s in sorted(ch.spell_slots, key=lambda s: -s.level):
+                while s.used and s.level <= budget:
+                    s.used -= 1
+                    budget -= s.level
+                    got.append(s.level)
+            if got:
+                uses["arcane_recovery"] = 1
+                out["arcane_recovery"] = got
         ch.feature_uses = uses
-        return {"kind": "short", "hit_dice_spent": spend, "healed": healed, "hp": ch.hp_current, "hit_dice_left": ch.hit_dice}
+        return out
     if kind != "long":
         raise ToolError("kind must be short or long.")
     if ch.hp_current < 1:
@@ -972,6 +985,8 @@ def t_rest(state: GameState, kind: str, hit_dice: int = 0) -> dict:
     regained = min(ch.level - ch.hit_dice, max(1, ch.level // 2))  # §6.2, R11
     ch.hit_dice += regained
     ch.feature_uses = {}
+    for s in ch.spell_slots:
+        s.used = 0  # a long rest restores every slot (SRD Spellcasting)
     set_flag(ch, raging=None, frenzy=None, rage_rounds=None, hidden=None)
     exh = change_exhaustion(ch, -1)["exhaustion"] if ch.exhaustion else 0  # §5, §6.2
     ch.hp_current = hp_max(ch)
@@ -1010,6 +1025,16 @@ def t_adjust_gold(state: GameState, amount: int, reason: str) -> dict:
     return {"gold": ch.gold, "reason": reason}
 
 
+def grow_slots(ch) -> None:
+    """Raise slot maximums to the table for the Character's level; spent slots stay spent."""
+    have = {s.level: s for s in ch.spell_slots}
+    for lvl, n in enumerate(srd.SPELL_SLOTS[ch.level], 1):
+        if lvl in have:
+            have[lvl].max = n
+        else:
+            ch.spell_slots.append(SpellSlot(level=lvl, max=n, used=0))
+
+
 def t_grant_xp(state: GameState, amount: int, reason: str) -> dict:
     ch = state.character
     if amount < 0:
@@ -1028,6 +1053,8 @@ def t_grant_xp(state: GameState, amount: int, reason: str) -> dict:
         if ch.hp_current > 0:
             ch.hp_current += gain
         ch.hit_dice += 1  # one Hit Die per level (§6.3)
+        if ch.spell_slots:
+            grow_slots(ch)
         levels.append(ch.level)
     return {"xp": ch.xp, "level": ch.level, "levels_gained": levels, "reason": reason, "hp_max": ch.hp_max}
 
@@ -1113,6 +1140,8 @@ def snapshot(state: GameState) -> dict:
         "death_saves": {"successes": ch.death_successes, "failures": ch.death_failures, "stable": ch.stable},
         "dead": ch.dead, "hit_dice": f"{ch.hit_dice}/{ch.level}", "features": feats,
         "status_flags": sorted(k for k, v in ch.flags.items() if v is True and k in ("raging", "frenzy", "hidden", "dodging", "reckless")),
+        "spell_slots": [{"level": s.level, "used": s.used, "max": s.max} for s in ch.spell_slots],
+        "spells": ch.spells,
         "gold": ch.gold,
         "inventory": [{"item": i.item_ref, "qty": i.qty, **({"equipped": True} if i.equipped else {})} for i in ch.inventory],
     }

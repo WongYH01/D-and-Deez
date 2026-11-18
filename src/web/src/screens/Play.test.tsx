@@ -20,6 +20,7 @@ const state = (inventory: Item[], extra: object = {}) => ({
       { skill: "stealth", ability: "dex", bonus: 2, proficient: false },
     ],
     features: { second_wind: "ready" },
+    spell_slots: [] as { level: number; used: number; max: number }[],
   },
   quests: [
     { id: 1, title: "Find the smugglers", status: "active", notes: [] },
@@ -376,4 +377,22 @@ test("the Auto-roll toggle saves on the server and is restored from GET /state",
 
   await vi.waitFor(() => expect((screen.getByLabelText(/Auto-roll/) as HTMLInputElement).checked).toBe(true));
   expect(calls.find((c) => c.key === "PUT /campaigns/1/auto_roll")?.body).toEqual({ on: true });
+});
+
+test("the sheet shows spell slots used and max for a caster only", async () => {
+  fakeEvents();
+  const caster = state([]);
+  caster.character.spell_slots = [{ level: 1, used: 1, max: 2 }, { level: 2, used: 0, max: 2 }];
+  fakeServer({ "GET /state": () => caster, "GET /log?session=1": () => [] });
+  render(<Play />);
+
+  const list = await screen.findByRole("list", { name: "Spell slots" });
+  expect(within(list).getByText("Level 1").nextSibling?.textContent).toBe("1 used / 2");
+  expect(within(list).getByText("Level 2").nextSibling?.textContent).toBe("0 used / 2");
+  cleanup();
+
+  fakeServer({ "GET /state": () => state([]), "GET /log?session=1": () => [] });
+  render(<Play />);
+  await screen.findByText("AC");
+  expect(screen.queryByRole("list", { name: "Spell slots" })).toBeNull();
 });

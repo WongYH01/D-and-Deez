@@ -20,7 +20,7 @@ from pidm.app import create_app
 from pidm.campaign import PLAN_TOOL
 from pidm.claude import ClaudeError, Usage
 from pidm.devclaude import DevClaude
-from pidm.models import Campaign, Character, Combatant, Session, Turn
+from pidm.models import Campaign, Character, Combatant, Session, SpellSlot, Turn
 
 from conftest import SETUP, Events, FakeClaude, act, bible_call, campaigns, create, fixture_bible, start, text, tool  # noqa: F401 (make_server, server fixtures come from conftest)
 
@@ -81,6 +81,19 @@ def test_regenerate_replaces_a_ready_bible_on_the_same_campaign(factory, server)
     with factory() as db:
         assert db.scalar(select(func.count()).select_from(Character)) == 1  # the first Character is gone
     assert server.http.post(f"/campaigns/{cid}/regenerate").status_code == 409  # now active
+
+
+def test_a_caster_template_is_selectable_and_its_slots_reach_the_state(factory, server):
+    cid = create(server, template="wizard", character_name="Ilse")
+    renamed = fixture_bible()
+    server.plan.script.append(bible_call(renamed))
+    assert server.http.post(f"/campaigns/{cid}/regenerate").status_code == 202  # clear_story drops the slots too
+    start(server, cid)
+    ch = server.http.get("/state").json()["character"]
+    assert (ch["name"], ch["class"], ch["spell_slots"]) == ("Ilse", "wizard", [{"level": 1, "used": 0, "max": 2}])
+    with factory() as db:
+        assert db.scalar(select(func.count()).select_from(SpellSlot)) == 1
+    assert server.http.post("/campaigns", json={**SETUP, "template": "druid"}).status_code == 422
 
 
 # --- Sessions and Turns -------------------------------------------------------------------------

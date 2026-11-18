@@ -22,6 +22,8 @@ const TEMPLATES = {
   fighter: "Fighter: Human Champion",
   rogue: "Rogue: Lightfoot Halfling Thief",
   barbarian: "Barbarian: Half-Orc Berserker",
+  wizard: "Wizard: Human, a spellcaster",
+  cleric: "Cleric: Human Life Domain, a spellcaster",
 };
 const STEPS = ["Setting", "Tone", "Length", "Lines and veils", "Character"];
 
