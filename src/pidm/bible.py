@@ -5,6 +5,10 @@ Generated and hand-written bibles pass through the same `validate`.
 
 from __future__ import annotations
 
+import functools
+import json
+from importlib import resources
+
 from pydantic import BaseModel, Field, ValidationError
 
 Slug = Field(pattern=r"^[a-z0-9][a-z0-9_.-]*$", max_length=60,
@@ -72,6 +76,17 @@ class Endings(BaseModel):
     defeat: str = Field(description="The Defeat condition and how it reads, in prose")
 
 
+class EncounterMonster(BaseModel):
+    monster: str = Field(description="SRD monster slug, e.g. goblin, wolf, bandit-captain")
+    count: int = Field(ge=1)
+
+
+class Encounter(BaseModel):
+    slug: str = Slug
+    act: str = Field(description="Slug of the Act the Encounter is planned for")
+    monsters: list[EncounterMonster]
+
+
 class Bible(BaseModel):
     title: str
     premise: str = Field(description="Spoiler-free premise shown to the player")
@@ -86,6 +101,43 @@ class Bible(BaseModel):
     start_location: str = Field(description="Slug of the Location where the opening scene takes place")
     endings: Endings
     opening_scene: str = Field(description="Starts mid-action, ties to the backstory hook, ends on a question")
+    encounters: list[Encounter] = Field(default_factory=list, description="Planned fights, sized to the Solo budget")
+
+
+MAX_MONSTERS = 2  # per Encounter: a second attacker is the most one Character can answer
+
+
+@functools.cache
+def _srd_monsters() -> dict[str, tuple[float, int]]:
+    """SRD monster slug -> (challenge rating, XP)."""
+    rows = json.loads(resources.files("pidm.data").joinpath("5e-SRD-Monsters.json").read_text(encoding="utf-8"))
+    return {m["index"]: (m["challenge_rating"], m["xp"]) for m in rows}
+
+
+def _solo_budget(b: Bible) -> list[str]:
+    """Solo budget (GLOSSARY, R21): the Character's level is taken as the Encounter's Act number, so for level L an
+    Encounter has at most MAX_MONSTERS monsters, none above CR L/2, worth at most 50*L XP in all (the DMG's
+    medium-difficulty XP threshold for one character). Count and CR matter, not only HP: one failed save against
+    paralysis or a stun ends a fight that has no ally."""
+    errors, srd = [], _srd_monsters()
+    acts = {a.slug: n for n, a in enumerate(b.acts, 1)}
+    for e in b.encounters:
+        if e.act not in acts:
+            errors.append(f"Encounter {e.slug} names Act {e.act!r}, which does not exist.")
+            continue
+        level = acts[e.act]
+        unknown = [m.monster for m in e.monsters if m.monster not in srd]
+        errors += [f"Encounter {e.slug}: {m} is not an SRD monster." for m in unknown]
+        count = sum(m.count for m in e.monsters)
+        if count > MAX_MONSTERS:
+            errors.append(f"Encounter {e.slug} has {count} monsters; the Solo budget allows {MAX_MONSTERS}.")
+        known = [(m, srd[m.monster]) for m in e.monsters if m.monster in srd]
+        errors += [f"Encounter {e.slug}: {m.monster} (CR {cr}) is above the Solo budget's CR {level / 2:g} for Act {level}."
+                   for m, (cr, _) in known if cr > level / 2]
+        xp = sum(m.count * x for m, (_, x) in known)
+        if xp > 50 * level:
+            errors.append(f"Encounter {e.slug} is worth {xp} XP; the Solo budget for Act {level} is {50 * level}.")
+    return errors
 
 
 def check(b: Bible, length: str | None) -> list[str]:
@@ -137,7 +189,7 @@ def check(b: Bible, length: str | None) -> list[str]:
     if mains != 1:
         errors.append(f"The bible needs exactly one Main clock; it has {mains}.")
     errors += [f"Main clock {c.slug} is visible; the Main clock must stay hidden." for c in b.clocks if c.main and c.visible]
-    return errors
+    return errors + _solo_budget(b)
 
 
 def validate(data, length: str | None) -> tuple[Bible | None, list[str]]:

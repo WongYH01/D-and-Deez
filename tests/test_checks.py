@@ -70,7 +70,7 @@ def test_missing_argument_is_rejected(make_game):
 
 def test_saving_throw_applies_damage_and_condition_on_failure(make_game):
     # §3: save bonus = mod + proficiency for class saves; effect applies on failure.
-    g = make_game("fighter").script(5, 4, 4)
+    g = make_game("fighter").script(5, 5, 4, 4)  # the failed 5 is rerolled (R20) to another 5
     r = g.ok("saving_throw", target="character", ability="constitution", dc=13,
              effect={"damage": "2d4", "damage_type": "poison", "condition": "poisoned"})
     assert r["total"] == 5 + 4 and not r["success"]

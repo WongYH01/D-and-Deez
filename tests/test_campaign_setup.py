@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 
+from pidm.bible import Bible
 from pidm.campaign import PLAN_TOOL, Setup, SetupError, start_campaign
 from pidm.engine import load_state
 
@@ -132,3 +133,43 @@ def test_a_broken_bible_is_rejected(factory, break_it, length, error):
     setup = Setup(setting="high fantasy", tone="heroic", length=length)
     with pytest.raises(SetupError, match=error.replace("(", r"\(").replace(")", r"\)")):
         start_campaign(factory, setup, "fighter", None, bible=b)
+
+
+def with_encounter(monsters):
+    b = fixture_bible()
+    b["encounters"] = [{"slug": "enc.shore", "act": b["acts"][0]["slug"], "monsters": monsters}]
+    return b
+
+
+# R21: the Solo budget.
+def test_the_generation_prompt_states_the_solo_budget(factory):
+    claude = FakeClaude(bible_call(fixture_bible()))
+    start_campaign(factory, SETUP, "fighter", None, client=claude)
+    system = claude.requests[0]["system"]
+    assert "Solo budget" in system and "at most 2 monsters" in system
+
+
+def test_an_encounter_over_the_solo_budget_is_retried_with_a_specific_error(factory):
+    over = with_encounter([{"monster": "goblin", "count": 3}])  # 3 monsters in Act 1
+    claude = FakeClaude(bible_call(over), bible_call(with_encounter([{"monster": "goblin", "count": 1}])))
+    start_campaign(factory, SETUP, "fighter", None, client=claude)
+    assert len(claude.requests) == 2
+    assert "Encounter enc.shore has 3 monsters; the Solo budget allows 2" in str(claude.requests[1]["messages"][-1]["content"])
+
+
+@pytest.mark.parametrize("monsters, error", [
+    ([{"monster": "ogre", "count": 1}], r"ogre \(CR 2\) is above the Solo budget's CR 0.5"),
+    ([{"monster": "goblin", "count": 2}], "worth 100 XP; the Solo budget for Act 1 is 50"),
+    ([{"monster": "no-such-beast", "count": 1}], "no-such-beast is not an SRD monster")])
+def test_each_solo_budget_limit_is_rejected(factory, monsters, error):
+    claude = FakeClaude(*[bible_call(with_encounter(monsters)) for _ in range(3)])
+    with pytest.raises(SetupError, match=error):
+        start_campaign(factory, SETUP, "fighter", None, client=claude)
+
+
+def test_a_bible_within_the_solo_budget_is_accepted_unchanged(factory):
+    ok = with_encounter([{"monster": "bandit", "count": 2}])  # 50 XP, CR 1/8
+    claude = FakeClaude(bible_call(ok))
+    sess = start_campaign(factory, SETUP, "fighter", None, client=claude)
+    assert len(claude.requests) == 1
+    assert story(factory, sess.id).bible == Bible.model_validate(ok).model_dump()

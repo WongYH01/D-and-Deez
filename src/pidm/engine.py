@@ -260,6 +260,24 @@ def d20_test(state: GameState, bonus: int, purpose: str, *, advantage=False, dis
     return roll, nat
 
 
+def save_roll(state: GameState, bonus: int, purpose: str, *, advantage=False, disadvantage=False,
+              is_lucky=False, target: int) -> tuple[Roll, int, bool]:
+    """A saving throw by the Character: d20_test plus Steady Nerve (R20).
+
+    shortcut: the reroll is automatic (as Lucky is, R9) rather than offered; upgrade if the owner wants the player asked.
+    Returns (roll kept, natural d20 kept, whether Steady Nerve was used).
+    """
+    ch = state.character
+    roll, nat = d20_test(state, bonus, purpose, advantage=advantage, disadvantage=disadvantage,
+                         is_lucky=is_lucky, target=target)
+    if roll.outcome == "success" or ch.feature_uses.get("steady_nerve"):
+        return roll, nat, False
+    ch.feature_uses = {**ch.feature_uses, "steady_nerve": 1}
+    roll, nat = d20_test(state, bonus, f"{purpose} (Steady Nerve)", advantage=advantage,
+                         disadvantage=disadvantage, is_lucky=is_lucky, target=target)
+    return roll, nat, True
+
+
 def ask_roll(state: GameState, purpose: str, bonus: int, target: int | None, advantage: bool, disadvantage: bool,
              versus: str | None = None) -> None:
     """Roll prompt: before a d20 Roll for the Character, ask the player to make it (a hook set by the orchestrator).
@@ -394,10 +412,10 @@ def wake(ch: Character) -> None:
 
 
 def death_save(state: GameState) -> dict:
-    """One death saving throw (§4.26). Lucky applies, as it is a saving throw (§10)."""
+    """One death saving throw (§4.26). Lucky and Steady Nerve apply, as it is a saving throw (§10, R20)."""
     ch = state.character
-    _, nat = d20_test(state, 0, f"{ch.name} death saving throw", is_lucky=lucky(ch), target=10)
-    out = {"roll": nat}
+    _, nat, nerve = save_roll(state, 0, f"{ch.name} death saving throw", is_lucky=lucky(ch), target=10)
+    out = {"roll": nat, **({"steady_nerve": True} if nerve else {})}
     if nat == 20:
         ch.hp_current = 1
         wake(ch)

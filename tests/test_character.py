@@ -29,8 +29,8 @@ def test_instant_death_from_massive_damage(make_game):
 
 
 def test_dropping_to_zero_outside_combat_resolves_in_one_step(make_game):
-    # R7: death saves until stable, then 1d4 hours, then 1 HP.
-    g = make_game("fighter").script(10, 15, 9, 12, 3)
+    # R7: death saves until stable, then 1d4 hours, then 1 HP. The failed 9 is rerolled (R20) to a 6, which stands.
+    g = make_game("fighter").script(10, 15, 9, 6, 12, 3)
     r = g.ok("apply_damage", target="character", amount="12", damage_type="slashing")
     dying = r["dying"]
     assert dying["result"] == "stable" and dying["hours_unconscious"] == 3
@@ -40,7 +40,7 @@ def test_dropping_to_zero_outside_combat_resolves_in_one_step(make_game):
 
 
 def test_dying_outside_combat_can_end_in_death(make_game):
-    g = make_game("fighter").script(1, 5)  # natural 1 = two failures, then a third
+    g = make_game("fighter").script(1, 1, 5)  # natural 1 = two failures (the R20 reroll is a 1 too), then a third
     r = g.ok("apply_damage", target="character", amount="12", damage_type="slashing")
     assert r["dying"]["result"] == "dead" and g.ch.dead
 

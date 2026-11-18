@@ -58,6 +58,11 @@ campaign's 8 to 12.
 fills first).
 - The opening scene starts mid-action at start_location, ties to the Character's backstory hook and ends on \
 a question.
+- Solo budget: the Character fights alone, so size every Encounter in `encounters` to it. Treat the \
+Character's level as the number of the Encounter's Act (Act 1 is level 1). An Encounter has at most 2 monsters \
+in all, none above challenge rating level/2 (Act 1: CR 1/2 or less), and its monsters' XP adds up to at most \
+50 times the level (Act 1: 50 XP, one goblin or two bandits). Use SRD monster slugs. Cutting HP is not enough: \
+one failed save against paralysis or a stun ends a fight with no ally.
 - Never include anything on the Lines list; keep anything on the Veils list off-screen.
 """
 
