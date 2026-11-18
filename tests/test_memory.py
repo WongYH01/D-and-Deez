@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from sqlalchemy import select
 
-from pidm.memory import NOTE_CAP_CHARS
-from pidm.models import DmNote, Entity, Fact
+from d_and_deez.memory import NOTE_CAP_CHARS
+from d_and_deez.models import DmNote, Entity, Fact
 
 from conftest import act, create, fixture_bible, start, text, tool
 
@@ -72,7 +72,7 @@ def test_note_cap_errors_until_an_older_note_is_updated_or_deleted(make_game):
 
 
 def test_context_has_facts_within_two_hops_and_all_notes(make_game):
-    from pidm.memory import memory_blocks
+    from d_and_deez.memory import memory_blocks
     g = make_game("fighter", fixture_bible())
     g.ok("add_fact", subject="Old Hesta", relation="is grandmother of", object="Tam", subject_kind="npc", object_kind="npc")
     g.ok("add_fact", subject="Tam", relation="serves", object="The Choir", object_kind="faction")
@@ -87,7 +87,7 @@ def test_context_has_facts_within_two_hops_and_all_notes(make_game):
 
 
 def test_current_location_entity_is_always_included(make_game):
-    from pidm.memory import memory_blocks
+    from d_and_deez.memory import memory_blocks
     g = make_game("fighter", fixture_bible())
     g.ok("add_fact", subject="The Reed Shore", relation="is haunted by", object="A drowned ferryman", object_kind="npc")
     world, _ = memory_blocks(g.state, ["I look around."])  # start location is loc.shore
@@ -95,7 +95,7 @@ def test_current_location_entity_is_always_included(make_game):
 
 
 def test_retired_facts_are_not_in_context(make_game):
-    from pidm.memory import memory_blocks
+    from d_and_deez.memory import memory_blocks
     g = make_game("fighter", fixture_bible())
     fid = g.ok("add_fact", subject="Old Hesta", relation="distrusts", object="Abbess Varn")["fact_id"]
     g.ok("retire_fact", fact_id=fid)
@@ -119,8 +119,8 @@ def test_npc_killed_in_one_session_is_dead_in_the_next(server):
 
 
 def test_over_budget_context_drops_far_facts_before_history(factory):
-    from pidm.campaign import Setup, start_campaign
-    from pidm.orchestrator import TurnOrchestrator
+    from d_and_deez.campaign import Setup, start_campaign
+    from d_and_deez.orchestrator import TurnOrchestrator
     from conftest import Events, FakeClaude
     sid = start_campaign(factory, Setup("dark fantasy", "grim", "one-shot"), "fighter", None, bible=fixture_bible()).id
     claude = FakeClaude(

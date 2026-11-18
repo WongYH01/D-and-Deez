@@ -2,7 +2,7 @@
 
 Computah, generate me a D&amp;D that doesn't use all my credits & turn my pi into smth that's not a smart mirror
 
-Pi Dungeon Master is a single-player, text-based D&D 5e game that runs as a web app. Claude narrates; the app's own code is the referee and story planner.
+D and Deez is a single-player, text-based D&D 5e game that runs as a web app. Claude narrates; the app's own code is the referee and story planner.
 
 ## Features
 
@@ -12,11 +12,11 @@ Pi Dungeon Master is a single-player, text-based D&D 5e game that runs as a web 
 - Each campaign gets a hidden plot with clues, clocks and defined endings, so the story can't dead-end. Fights are sized for one character.
 - Or import a published adventure from a PDF or text file.
 - Continuity across sessions: recaps, remembered NPCs and places, and recall of similar past scenes.
-- One Docker image that runs on a PC or a Raspberry Pi 5. No local LLM; Claude is called through the Anthropic API.
+- One Docker image that runs on any 64-bit Linux, Windows or macOS host with Docker, such as a PC or a Raspberry Pi 5. No local LLM; Claude is called through the Anthropic API.
 
 ## What you need
 
-- Docker with Compose (64-bit OS on a Raspberry Pi 5).
+- A 64-bit Linux, Windows or macOS host with Docker and Compose.
 - An [Anthropic API key](https://console.anthropic.com/).
 
 ## Run it
@@ -34,6 +34,6 @@ Start it, and again after every `git pull`:
 docker compose up -d --build
 ```
 
-Open <http://localhost:8000> (on a Pi, `http://<pi-address>:8000`). `curl -i http://localhost:8000/health` returns 200 when it is up.
+Open <http://localhost:8000> (from another device, `http://<host-address>:8000`; for a Pi, its address). `curl -i http://localhost:8000/health` returns 200 when it is up.
 
 Your campaigns are saved in `data/`, and a backup is written to `backups/` when a session ends. Optional settings (models, token budget) are in `.env.example`.

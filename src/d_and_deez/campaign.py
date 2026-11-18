@@ -12,13 +12,13 @@ from typing import Callable
 
 from sqlalchemy.orm import sessionmaker
 
-from pidm.bible import ACTS, Bible, validate
-from pidm.claude import ClaudeClient
-from pidm.memory import seed_entities
-from pidm.models import Beat, BibleVersion, Campaign, Clock, Clue, Secret, Session
-from pidm.sources import IMPORT_SYSTEM, full_text, tag_chunks
-from pidm.story import end
-from pidm.templates import create_character
+from d_and_deez.bible import ACTS, Bible, validate
+from d_and_deez.claude import ClaudeClient
+from d_and_deez.memory import seed_entities
+from d_and_deez.models import Beat, BibleVersion, Campaign, Clock, Clue, Secret, Session
+from d_and_deez.sources import IMPORT_SYSTEM, full_text, tag_chunks
+from d_and_deez.story import end
+from d_and_deez.templates import create_character
 
 PLAN_TOOL = "write_campaign_bible"
 ATTEMPTS = 3

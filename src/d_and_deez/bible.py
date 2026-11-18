@@ -110,7 +110,7 @@ MAX_MONSTERS = 2  # per Encounter: a second attacker is the most one Character c
 @functools.cache
 def _srd_monsters() -> dict[str, tuple[float, int]]:
     """SRD monster slug -> (challenge rating, XP)."""
-    rows = json.loads(resources.files("pidm.data").joinpath("5e-SRD-Monsters.json").read_text(encoding="utf-8"))
+    rows = json.loads(resources.files("d_and_deez.data").joinpath("5e-SRD-Monsters.json").read_text(encoding="utf-8"))
     return {m["index"]: (m["challenge_rating"], m["xp"]) for m in rows}
 
 

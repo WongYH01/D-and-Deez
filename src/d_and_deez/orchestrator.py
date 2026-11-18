@@ -14,19 +14,19 @@ from typing import Callable
 from sqlalchemy import func, select
 from sqlalchemy.orm import sessionmaker
 
-from pidm.claude import ClaudeClient, Reply, Usage
-from pidm.dice import Dice
-from pidm.engine import load_state
-from pidm.memory import HOPS, memory_blocks
-from pidm.models import Campaign, RollRecord, Session, Turn
-from pidm.prompts import OPENING, RESUME, system_prompt, user_message
-from pidm.recap import recap_block
-from pidm.scenes import end_overlong_scene
-from pidm.sources import location_text
-from pidm.recall import Embedder, recall
-from pidm.rules import retrieve
-from pidm.story import director_block, end, ending_met
-from pidm.tools import dispatch, snapshot, tool_definitions
+from d_and_deez.claude import ClaudeClient, Reply, Usage
+from d_and_deez.dice import Dice
+from d_and_deez.engine import load_state
+from d_and_deez.memory import HOPS, memory_blocks
+from d_and_deez.models import Campaign, RollRecord, Session, Turn
+from d_and_deez.prompts import OPENING, RESUME, system_prompt, user_message
+from d_and_deez.recap import recap_block
+from d_and_deez.scenes import end_overlong_scene
+from d_and_deez.sources import location_text
+from d_and_deez.recall import Embedder, recall
+from d_and_deez.rules import retrieve
+from d_and_deez.story import director_block, end, ending_met
+from d_and_deez.tools import dispatch, snapshot, tool_definitions
 
 Emit = Callable[[str, dict], None]
 CACHE = {"type": "ephemeral"}  # the default 5-minute lifetime

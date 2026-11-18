@@ -1,5 +1,5 @@
 """Seam 1: Steady Nerve (R20), a once-per-long-rest reroll of a failed saving throw."""
-from pidm.tools import snapshot
+from d_and_deez.tools import snapshot
 
 
 def save(g, dc=15):

@@ -11,9 +11,9 @@ from dataclasses import dataclass, field
 
 from sqlalchemy.orm import Session as DbSession
 
-from pidm import srd
-from pidm.dice import Dice, Roll, combine_modes
-from pidm.models import Campaign, Character, Combatant, Encounter, Session, SrdMonster
+from d_and_deez import srd
+from d_and_deez.dice import Dice, Roll, combine_modes
+from d_and_deez.models import Campaign, Character, Combatant, Encounter, Session, SrdMonster
 
 
 class ToolError(Exception):

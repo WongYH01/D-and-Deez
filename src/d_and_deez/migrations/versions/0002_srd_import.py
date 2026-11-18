@@ -24,7 +24,7 @@ M1_MONSTERS = ("bandit", "bandit-captain", "goblin", "skeleton", "wolf")
 
 
 def _load(name: str) -> list[dict]:
-    return json.loads(resources.files("pidm.data").joinpath(f"5e-SRD-{name}.json").read_text(encoding="utf-8"))
+    return json.loads(resources.files("d_and_deez.data").joinpath(f"5e-SRD-{name}.json").read_text(encoding="utf-8"))
 
 
 def _rows(records: list[dict]) -> list[dict]:

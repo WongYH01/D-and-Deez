@@ -30,7 +30,7 @@ def make_engine(db_path: str) -> Engine:
 def migrate(engine: Engine) -> None:
     """Bring the schema to the latest Alembic revision."""
     cfg = Config()
-    cfg.set_main_option("script_location", "pidm:migrations")
+    cfg.set_main_option("script_location", "d_and_deez:migrations")
     with engine.begin() as conn:
         cfg.attributes["connection"] = conn
         command.upgrade(cfg, "head")

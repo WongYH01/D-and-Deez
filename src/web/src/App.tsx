@@ -37,7 +37,7 @@ export function App() {
     <div className="flex h-dvh flex-col md:h-auto md:min-h-svh">
       <header className="flex shrink-0 items-center gap-1 border-b px-2 py-2 sm:gap-2 sm:px-4">
         <a href="#/play" className="mr-auto min-w-0 truncate font-heading text-lg text-primary">
-          Pi Dungeon Master
+          D and Deez
         </a>
         <Button variant="ghost" render={<a href="#/campaigns" />} nativeButton={false}>
           Campaigns

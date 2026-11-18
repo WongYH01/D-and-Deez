@@ -63,7 +63,7 @@ class Campaign(Base):
 
 
 class Source(Base):
-    """An uploaded adventure file. Its split text lives in the `source_chunks` FTS5 table (pidm.sources); a source is
+    """An uploaded adventure file. Its split text lives in the `source_chunks` FTS5 table (d_and_deez.sources); a source is
     shared by nothing but the Campaigns that import it, so it is not Campaign-owned."""
     __tablename__ = "sources"
     id: Mapped[int] = mapped_column(primary_key=True)

@@ -33,7 +33,7 @@ def upgrade() -> None:
     sa.PrimaryKeyConstraint('slug')
     )
     # M1 fixtures: five SRD 5.1 monsters from the vendored 5e-database file; M2 imports the rest.
-    monsters = [m for m in json.loads(resources.files("pidm.data").joinpath("5e-SRD-Monsters.json").read_text(encoding="utf-8"))
+    monsters = [m for m in json.loads(resources.files("d_and_deez.data").joinpath("5e-SRD-Monsters.json").read_text(encoding="utf-8"))
                 if m["index"] in ("bandit", "bandit-captain", "goblin", "skeleton", "wolf")]
     srd = sa.table("srd_monsters", sa.column("slug", sa.String), sa.column("name", sa.String), sa.column("data", sa.JSON))
     op.bulk_insert(srd, [{"slug": m["index"], "name": m["name"], "data": m} for m in monsters])

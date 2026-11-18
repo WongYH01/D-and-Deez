@@ -6,9 +6,9 @@ import logging
 
 from sqlalchemy import select, text as sql
 
-from pidm.models import Scene
-from pidm.orchestrator import TurnOrchestrator
-from pidm.recall import embed_scene
+from d_and_deez.models import Scene
+from d_and_deez.orchestrator import TurnOrchestrator
+from d_and_deez.recall import embed_scene
 
 from conftest import Events, FakeClaude, FakeEmbedder, act, create, fixture_bible, start, text, tool
 from test_orchestrator import final_user_message, next_session

@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import pytest
 
-from pidm.bible import Bible
-from pidm.campaign import PLAN_TOOL, Setup, SetupError, start_campaign
-from pidm.engine import load_state
+from d_and_deez.bible import Bible
+from d_and_deez.campaign import PLAN_TOOL, Setup, SetupError, start_campaign
+from d_and_deez.engine import load_state
 
 from conftest import FakeClaude, fixture_bible, tool
 

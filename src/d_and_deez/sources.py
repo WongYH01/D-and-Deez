@@ -15,8 +15,8 @@ from pathlib import Path
 from sqlalchemy import text
 from sqlalchemy.orm import Session as DbSession, sessionmaker
 
-from pidm.bible import Bible
-from pidm.models import Source
+from d_and_deez.bible import Bible
+from d_and_deez.models import Source
 
 MAX_CHARS = 400_000  # about 100k tokens: the whole text goes to Claude once, to convert it
 CHUNK_CHARS = 3000  # a longer section is split at paragraph breaks

@@ -8,8 +8,8 @@ Every rule cites the design document's Story design section (Story design §N).
 
 from __future__ import annotations
 
-from pidm.engine import GameState, ToolError
-from pidm.models import Beat, Campaign, Clock, Clue
+from d_and_deez.engine import GameState, ToolError
+from d_and_deez.models import Beat, Campaign, Clock, Clue
 
 STALL_TURNS = 8  # Story design §4
 ENDINGS = ("victory", "defeat", "fallen_hero")  # Retired is the player's, never Claude's

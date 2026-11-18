@@ -7,9 +7,9 @@ from __future__ import annotations
 
 import re
 
-from pidm.bible import Bible
-from pidm.engine import GameState, ToolError
-from pidm.models import Campaign, DmNote, Entity, Fact
+from d_and_deez.bible import Bible
+from d_and_deez.engine import GameState, ToolError
+from d_and_deez.models import Campaign, DmNote, Entity, Fact
 
 KINDS = ("npc", "place", "faction", "item")
 NOTE_CAP_CHARS = 2000  # about 500 tokens at the engine's characters / 4 estimate

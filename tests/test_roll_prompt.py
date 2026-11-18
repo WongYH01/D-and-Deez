@@ -8,8 +8,8 @@ from __future__ import annotations
 import threading
 import time
 
-from pidm.models import Campaign
-from pidm.orchestrator import TurnOrchestrator
+from d_and_deez.models import Campaign
+from d_and_deez.orchestrator import TurnOrchestrator
 
 from conftest import Events, FakeClaude, scripted_rng, set_auto_roll, text, tool
 from test_combat import fight

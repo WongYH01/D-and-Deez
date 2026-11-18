@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from sqlalchemy import select
 
-from pidm.claude import ClaudeError
-from pidm.models import Scene
+from d_and_deez.claude import ClaudeError
+from d_and_deez.models import Scene
 
 from conftest import text, tool
 from conftest import act, create, start
@@ -63,7 +63,7 @@ def test_a_failed_summary_leaves_play_unaffected(factory, server):
 
 
 def test_a_scene_is_not_auto_ended_during_an_encounter(make_game):
-    from pidm.scenes import end_overlong_scene
+    from d_and_deez.scenes import end_overlong_scene
     g = make_game("fighter")
     g.script(10, 10, 10).ok("start_encounter", monsters=[{"monster": "goblin", "count": 1}])
     g.state.turn = 20
