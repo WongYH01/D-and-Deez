@@ -125,7 +125,7 @@ def test_fallen_hero_needs_a_dead_character_and_retired_is_not_claudes(make_game
     g = make_game(bible=fixture_bible())
     assert g.call("end_campaign", ending="fallen_hero")["error"].startswith("The fallen_hero Ending needs")
     assert "must be one of" in g.call("end_campaign", ending="retired")["error"]
-    g.script(1, 5)  # §4.26: a natural 1 counts as two failures, then a third failure
+    g.script(1, 1, 5)  # §4.26: a natural 1 counts as two failures (the reroll, R20, is a 1 too), then a third
     g.ok("apply_damage", target="character", amount="12", damage_type="slashing")
     assert g.ch.dead and g.ch.death_failures == 3
     assert g.ok("end_campaign", ending="fallen_hero")["ending"] == "fallen_hero"

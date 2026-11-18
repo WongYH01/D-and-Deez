@@ -18,7 +18,7 @@ from pidm.engine import (
     check_bonus, d20_test, death_save, end_rage, equipped_armor, expire_conditions, has, heal_character,
     hp_max, hurt_character, hurt_combatant, incapacitated, lucky, m_check_bonus, m_mod, m_save_bonus, mod,
     passive_perception, prof, prone_rider, resolve_dying, ready_to_flee, remove_condition, resist_character, save_bonus,
-    set_flag,
+    save_roll, set_flag,
 )
 from pidm.models import Combatant, Encounter, InventoryItem, Quest, SpellSlot, SrdItem, SrdMonster, SrdSpell
 from pidm.memory import KINDS, t_add_fact, t_retire_fact, t_write_note
@@ -338,9 +338,9 @@ def _character_save(state: GameState, ability: str, dc: int, purpose: str, *, ad
     if ability == "dex" and has(ch, "restrained"):
         dis = True  # §5 Restrained
     ask_roll(state, purpose, save_bonus(ch, ability), dc, adv, dis)
-    roll, _ = d20_test(state, save_bonus(ch, ability), purpose, advantage=adv, disadvantage=dis,
-                       is_lucky=lucky(ch), target=dc)
-    return {"success": roll.outcome == "success", "total": roll.total}
+    roll, _, nerve = save_roll(state, save_bonus(ch, ability), purpose, advantage=adv, disadvantage=dis,
+                               is_lucky=lucky(ch), target=dc)
+    return {"success": roll.outcome == "success", "total": roll.total, **({"steady_nerve": True} if nerve else {})}
 
 
 def _combatant_save(state: GameState, c: Combatant, ability: str, dc: int, purpose: str, *, advantage=False,
@@ -1252,6 +1252,7 @@ def snapshot(state: GameState) -> dict:
             feats["action_surge"] = "spent" if ch.feature_uses.get("action_surge") else "ready"
     if ch.char_class == "rogue":
         feats["sneak_attack"] = srd.SNEAK_ATTACK[ch.level]
+    feats["steady_nerve"] = "spent" if ch.feature_uses.get("steady_nerve") else "ready"  # R20
     if ch.race == "half_orc":
         feats["relentless_endurance"] = "spent" if ch.feature_uses.get("relentless_endurance") else "ready"
     sheet = {

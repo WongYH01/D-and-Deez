@@ -365,7 +365,8 @@ def test_dodge_gives_attackers_disadvantage(make_game):
 def test_wolf_bite_can_knock_the_character_prone(make_game):
     g = make_game("rogue")
     fight(g, "wolf")
-    g.script(15, 2, 2, 3).ok("resolve_npc_turns")  # bite 19 hits; 2d4 = 4 +2; Str save 3-1 = 2 fails DC 11
+    # bite 19 hits; 2d4 = 4 +2; Str save 3-1 = 2 fails DC 11, and so does the Steady Nerve reroll (R20)
+    g.script(15, 2, 2, 3, 3).ok("resolve_npc_turns")
     assert any(c["name"] == "prone" for c in g.ch.conditions)
 
 
