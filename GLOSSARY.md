@@ -58,6 +58,14 @@ _Avoid_: Ability (that is Strength, Dexterity and the rest), power, skill
 A fight, from start to end, with its Combatants.
 _Avoid_: Combat, battle
 
+**Solo budget**:
+The most an Encounter may demand of the one Character; the Campaign bible's Encounters are sized to it.
+_Avoid_: Party budget, difficulty setting
+
+**Steady Nerve**:
+A Feature that lets the Character reroll one failed saving throw, once per long rest, and keep the new roll.
+_Avoid_: Lucky (a different Feature), reroll
+
 **Combatant**:
 A participant in an Encounter other than the Character, built from a Stat block.
 _Avoid_: Enemy, mob, NPC (an NPC is a story figure, not necessarily a fighter)
@@ -165,5 +173,5 @@ Eight Turns in a row with no Beat advanced and no Clue revealed; moving and Cloc
 _Avoid_: Idle, stuck
 
 **Ending**:
-How a Campaign concludes: Victory, Defeat, Fallen hero or Retired, each with a fixed condition.
+How a Campaign concludes: Victory, Defeat, Fallen hero (the Character is dead) or Retired, each with a fixed condition. Victory, Defeat and Fallen hero end the Campaign as soon as their condition holds; only the player ends it as Retired.
 _Avoid_: Outcome, finale
