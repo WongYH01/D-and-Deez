@@ -9,6 +9,8 @@ To reach the Play screen without the wizard, create a Campaign, wait until `GET 
 Each Turn answers by the player's action:
 - an action containing "fail" fails the Turn (an `error` event, then Retry);
 - an action containing "roll" makes a Perception check first (a `roll` line);
+- "fight" starts an Encounter with two goblins, "hit" deals 3 damage to Goblin 1 (7 HP: wounded, bloodied, down)
+  and "flee" ends the Encounter;
 - anything else gets a short Narration.
 Every call waits `PIDM_FAKE_DELAY` seconds (default 1) so the thinking indicator and the locked input show.
 """
@@ -75,4 +77,10 @@ class DevClaude:
             raise ClaudeError("Dev client: a scripted failure.")
         if "roll" in action and tools_enabled:
             return _tool("skill_check", {"skill": "perception", "dc": 12})
+        if "fight" in action and tools_enabled:
+            return _tool("start_encounter", {"monsters": [{"monster": "goblin", "count": 2}]})
+        if "hit" in action and tools_enabled:
+            return _tool("apply_damage", {"target": "Goblin 1", "amount": "3", "damage_type": "slashing"})
+        if "flee" in action and tools_enabled:
+            return _tool("end_encounter", {})
         return _text(f'(Dev Narration) "{action}": the fog shifts around you. What do you do?')

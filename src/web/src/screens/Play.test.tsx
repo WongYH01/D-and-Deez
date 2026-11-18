@@ -72,7 +72,7 @@ test("another tab's equip reaches this sheet through state_changed", async () =>
 
 test.each([
   ["a Turn is running", { running_turn_seq: 3 }],
-  ["an Encounter is active", { encounter: { round: 1, active: "Ada", order: [], combatants: [] } }],
+  ["an Encounter is active", { encounter: { round: 1, active: "Ada", order: [] } }],
 ])("Equip and Unequip are disabled while %s", async (_, extra) => {
   fakeEvents();
   fakeServer({ "GET /state": () => state([sword, { ...rations, equipped: true }], extra), "GET /log?session=1": () => [] });
@@ -131,4 +131,35 @@ test("a refusal without a JSON body still shows a notice", async () => {
   fireEvent.click(await screen.findByRole("button", { name: "Equip longsword" }));
 
   await screen.findByText("The server refused the change.");
+});
+
+test("the Encounter panel lists the fight in order, marks the active Combatant and follows state_changed", async () => {
+  const emit = fakeEvents();
+  const fight = (goblin: string, conditions: string[]) => ({
+    encounter: {
+      round: 2, active: "Goblin 1", order: [
+        { name: "Goblin 1", initiative: 15, conditions, health: goblin },
+        { name: "Ada", initiative: 12, conditions: [], health: "unhurt" },
+      ],
+    },
+  });
+  let current = state([], fight("wounded", []));
+  fakeServer({ "GET /state": () => current, "GET /log?session=1": () => [] });
+  render(<Play />);
+
+  const panel = await screen.findByRole("list", { name: "Encounter" });
+  const rows = within(panel).getAllByRole("listitem");
+  expect(rows.map((r) => r.textContent)).toEqual(["Goblin 1wounded", "Adaunhurt"]);
+  expect(rows[0].getAttribute("aria-current")).toBe("true");
+  expect(rows[1].getAttribute("aria-current")).toBeNull();
+  expect(screen.getByText("Round 2")).toBeTruthy();
+
+  current = state([], fight("down", ["prone"]));
+  emit("state_changed", { turn_seq: 4 });
+  await within(panel).findByText("down");
+  expect(within(panel).getByText("prone")).toBeTruthy();
+
+  current = state([]);
+  emit("state_changed", { turn_seq: 5 });
+  await vi.waitFor(() => expect(screen.queryByRole("list", { name: "Encounter" })).toBeNull());
 });

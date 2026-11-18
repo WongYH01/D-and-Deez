@@ -19,7 +19,14 @@ type StateView = {
     inventory: Item[];
   };
   quests: { id: number; title: string; status: string; notes: string[] }[];
-  encounter: object | null;
+  encounter: Encounter | null;
+};
+
+/** The fight in initiative order; health is a word, never HP. */
+type Encounter = {
+  round: number;
+  active: string;
+  order: { name: string; initiative: number; conditions: string[]; health: string }[];
 };
 
 type Item = { id: number; item: string; qty: number; equipped: boolean };
@@ -117,7 +124,12 @@ export function Play() {
 
   return (
     <div className="grid gap-4 md:grid-cols-[16rem_1fr]">
-      {view && <SheetPanel view={view} gearLocked={locked || !!view.encounter} onEquip={setEquipped} />}
+      {view && (
+        <div className="space-y-4">
+          <SheetPanel view={view} gearLocked={locked || !!view.encounter} onEquip={setEquipped} />
+          {view.encounter && <EncounterPanel encounter={view.encounter} />}
+        </div>
+      )}
       <section className="flex min-w-0 flex-col gap-3">
         <StoryLog turns={log.turns} thinking={thinking} onRetry={(t) => void submit(t.playerText)} locked={locked} />
         {notice && <p className="text-sm text-destructive">{notice}</p>}
@@ -178,6 +190,31 @@ function SheetPanel({ view: { character: c, quests }, gearLocked, onEquip }: {
           {!quests.length && <li>none</li>}
         </ul>
       </section>
+    </aside>
+  );
+}
+
+function EncounterPanel({ encounter: { round, active, order } }: { encounter: Encounter }) {
+  return (
+    <aside className="space-y-2 rounded-lg border bg-card p-4 text-sm">
+      <div className="flex justify-between">
+        <h3 id="encounter" className="text-muted-foreground">Encounter</h3>
+        <span className="text-muted-foreground">Round {round}</span>
+      </div>
+      <ul aria-labelledby="encounter" className="space-y-1">
+        {order.map((c) => (
+          <li key={c.name} aria-current={c.name === active || undefined}
+            className="flex justify-between gap-2 rounded px-1 aria-[current]:bg-muted aria-[current]:font-medium">
+            <span>
+              {c.name}
+              {c.conditions.length > 0 && <span className="text-xs text-muted-foreground"> {c.conditions.join(", ")}</span>}
+            </span>
+            <span className={c.health === "down" ? "text-muted-foreground" : c.health === "bloodied" ? "text-destructive" : ""}>
+              {c.health}
+            </span>
+          </li>
+        ))}
+      </ul>
     </aside>
   );
 }

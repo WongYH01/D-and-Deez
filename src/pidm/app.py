@@ -29,7 +29,7 @@ from pidm import srd
 from pidm.campaign import Setup, build_campaign, clear_story, new_campaign, retire
 from pidm.claude import AnthropicClient, ClaudeClient, plan_client as make_plan_client, recap_client as make_recap_client
 from pidm.db import open_db
-from pidm.engine import load_state
+from pidm.engine import hp_max, load_state
 from pidm.models import Campaign, Session, Turn
 from pidm.orchestrator import TurnOrchestrator, next_seq
 from pidm.prompts import OPENING, RESUME
@@ -111,6 +111,10 @@ def _open_session(db) -> Session | None:
     return db.scalar(select(Session).where(Session.ended_at.is_(None)))
 
 
+def health_word(hp: int, hp_max: int, down: bool) -> str:
+    return "down" if down else "unhurt" if hp >= hp_max else "wounded" if hp * 2 > hp_max else "bloodied"
+
+
 def _conflict(message: str) -> HTTPException:
     return HTTPException(409, message)
 
@@ -186,13 +190,30 @@ def create_app(factory: sessionmaker, *, turn_client: ClaudeClient, plan_client:
             busy.release()
             raise
 
+    def encounter_json(state) -> dict | None:
+        """The fight for the player: initiative order and a health word, never HP or AC (design: Web UI)."""
+        enc = state.encounter
+        if enc is None:
+            return None
+        ch = state.character
+        rows = {c.name: (c.hp, c.hp_max, c.status != "active", [x["name"] for x in c.conditions])
+                for c in enc.combatants}
+        rows[ch.name] = (ch.hp_current, hp_max(ch), ch.dead or ch.hp_current == 0, [x["name"] for x in ch.conditions])
+        order = []
+        for e in enc.state["order"]:
+            hp, full, down, conditions = rows[e["name"]]
+            order.append({"name": e["name"], "initiative": e["initiative"], "conditions": conditions,
+                          "health": health_word(hp, full, down)})
+        return {"round": enc.round, "active": enc.active_combatant, "order": order}
+
     def state_json(db, sess: Session) -> dict:
         state = load_state(db, sess.id, None)
         snap = snapshot(state)
         snap["character"]["inventory"] = [{"id": i.id, "item": i.item_ref, "qty": i.qty, "equipped": i.equipped}
                                           for i in state.character.inventory]
         return {"session_id": sess.id, "campaign_id": sess.campaign_id, "campaign_name": sess.campaign.name,
-                "running_turn_seq": running["seq"], "encounter": None, **snap,
+                "running_turn_seq": running["seq"], **snap,
+                "encounter": encounter_json(state),  # after **snap: replaces the engine's view, which has HP and AC
                 "clocks": [{"name": c.name, "filled": c.filled, "segments": c.segments}
                            for c in sess.campaign.clocks if c.visible]}
 
