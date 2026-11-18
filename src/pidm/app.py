@@ -32,6 +32,7 @@ from pidm.db import open_db
 from pidm.engine import load_state
 from pidm.models import Campaign, Session, Turn
 from pidm.orchestrator import TurnOrchestrator, next_seq
+from pidm.prompts import OPENING, RESUME
 from pidm.recap import ROLLING_EVERY, write_final_recap, write_rolling_recap
 from pidm.templates import TEMPLATES
 from pidm.tools import snapshot
@@ -269,7 +270,9 @@ def create_app(factory: sessionmaker, *, turn_client: ClaudeClient, plan_client:
         with factory() as db:
             rows = db.scalars(select(Turn).where(Turn.session_id == session, Turn.status == "committed")
                               .order_by(Turn.seq)).all()
-            return [{"seq": t.seq, "player_text": t.player_text, "narration": t.narration,
+            # The opening and resume prompts are ours, not the player's, so the log shows no action for them.
+            return [{"seq": t.seq, "player_text": "" if t.player_text in (OPENING, RESUME) else t.player_text,
+                     "narration": t.narration,
                      "rolls": [{"purpose": r.purpose, "expr": r.expr, "dice": r.dice, "total": r.total,
                                 "target": r.target, "outcome": r.outcome} for r in t.rolls]} for t in rows]
 

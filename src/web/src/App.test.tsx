@@ -1,8 +1,9 @@
-import { render, screen } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, expect, test } from "vitest";
 import { App, screenFor } from "./App";
 
 afterEach(() => {
+  cleanup(); // before the hash change, which would otherwise mount the play screen
   location.hash = "";
 });
 

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { About } from "@/screens/About";
+import { Play } from "@/screens/Play";
 
 const SCREENS = ["play", "campaigns", "about", "setup"] as const;
 export type Screen = (typeof SCREENS)[number];
@@ -21,6 +22,13 @@ function useScreen(): Screen {
   return screen;
 }
 
+/** Close the open Session (the server writes its Final recap); a 409 means a Turn is running. */
+async function endSession() {
+  const r = await fetch("/session/end", { method: "POST" });
+  if (r.ok) location.hash = "#/campaigns";
+  else alert((await r.json()).detail ?? "The Session could not be ended.");
+}
+
 function Placeholder({ title }: { title: string }) {
   return <h1 className="font-heading text-2xl">{title}</h1>;
 }
@@ -36,15 +44,16 @@ export function App() {
         <Button variant="ghost" render={<a href="#/campaigns" />} nativeButton={false}>
           Campaigns
         </Button>
-        {/* Wired to POST /session/end with the play screen (M5.2). */}
-        <Button variant="ghost">End session</Button>
+        <Button variant="ghost" onClick={() => void endSession()}>
+          End session
+        </Button>
         <Button variant="ghost" render={<a href="#/about" />} nativeButton={false}>
           About
         </Button>
       </header>
-      <main className="mx-auto max-w-3xl p-4">
+      <main className="mx-auto max-w-5xl p-4">
         {screen === "about" && <About />}
-        {screen === "play" && <Placeholder title="Play" />}
+        {screen === "play" && <Play />}
         {screen === "campaigns" && <Placeholder title="Campaigns" />}
         {screen === "setup" && <Placeholder title="New campaign" />}
       </main>
