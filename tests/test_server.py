@@ -320,6 +320,19 @@ def test_retire_ends_the_campaign_and_closes_the_session(factory, server):
     assert server.http.post(f"/campaigns/{cid}/retire").status_code == 409
 
 
+def test_state_lists_only_visible_clocks_as_they_tick(server):
+    b = fixture_bible()
+    b["clocks"][1]["visible"] = True
+    server.plan.script.append(bible_call(b))
+    start(server, server.http.post("/campaigns", json=SETUP).json()["campaign_id"])
+    assert server.http.get("/state").json()["clocks"] == [
+        {"name": "The cult grows suspicious", "filled": 0, "segments": 4}]
+    act(server, "I wait", tool("tick_clock", clock="clock.suspicion", segments=2, reason="seen"),
+        tool("tick_clock", clock="clock.tide", segments=1, reason="time"), text("Eyes in the fog."))
+    assert server.http.get("/state").json()["clocks"] == [
+        {"name": "The cult grows suspicious", "filled": 2, "segments": 4}]
+
+
 def test_an_ending_sends_campaign_ended_and_closes_the_session(factory, server):
     cid = create(server)
     sid = start(server, cid)

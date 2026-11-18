@@ -163,3 +163,28 @@ test("the Encounter panel lists the fight in order, marks the active Combatant a
   emit("state_changed", { turn_seq: 5 });
   await vi.waitFor(() => expect(screen.queryByRole("list", { name: "Encounter" })).toBeNull());
 });
+
+test("each Visible clock shows its name and segments and fills on state_changed", async () => {
+  const emit = fakeEvents();
+  let current = state([], { clocks: [{ name: "The vote is called", filled: 1, segments: 4 }] });
+  fakeServer({ "GET /state": () => current, "GET /log?session=1": () => [] });
+  render(<Play />);
+
+  const clocks = await screen.findByRole("list", { name: "Clocks" });
+  expect(within(clocks).getByText("1/4")).toBeTruthy();
+  const meter = within(clocks).getByRole("meter", { name: "The vote is called" });
+  expect(meter.getAttribute("aria-valuenow")).toBe("1");
+  expect(meter.children).toHaveLength(4);
+
+  current = state([], { clocks: [{ name: "The vote is called", filled: 3, segments: 4 }] });
+  emit("state_changed", { turn_seq: 2 });
+  await within(clocks).findByText("3/4");
+});
+
+test("no Clocks panel shows when no Clock is visible", async () => {
+  fakeEvents();
+  fakeServer({ "GET /state": () => state([]), "GET /log?session=1": () => [] });
+  render(<Play />);
+  await screen.findByRole("list", { name: "Inventory" });
+  expect(screen.queryByRole("list", { name: "Clocks" })).toBeNull();
+});

@@ -20,7 +20,11 @@ type StateView = {
   };
   quests: { id: number; title: string; status: string; notes: string[] }[];
   encounter: Encounter | null;
+  clocks: Clock[];
 };
+
+/** A Visible clock; hidden Clocks, the Main clock included, never reach the UI. */
+type Clock = { name: string; filled: number; segments: number };
 
 /** The fight in initiative order; health is a word, never HP. */
 type Encounter = {
@@ -128,6 +132,7 @@ export function Play() {
         <div className="space-y-4">
           <SheetPanel view={view} gearLocked={locked || !!view.encounter} onEquip={setEquipped} />
           {view.encounter && <EncounterPanel encounter={view.encounter} />}
+          {view.clocks.length > 0 && <ClocksPanel clocks={view.clocks} />}
         </div>
       )}
       <section className="flex min-w-0 flex-col gap-3">
@@ -212,6 +217,30 @@ function EncounterPanel({ encounter: { round, active, order } }: { encounter: En
             <span className={c.health === "down" ? "text-muted-foreground" : c.health === "bloodied" ? "text-destructive" : ""}>
               {c.health}
             </span>
+          </li>
+        ))}
+      </ul>
+    </aside>
+  );
+}
+
+function ClocksPanel({ clocks }: { clocks: Clock[] }) {
+  return (
+    <aside className="space-y-2 rounded-lg border bg-card p-4 text-sm">
+      <h3 id="clocks" className="text-muted-foreground">Clocks</h3>
+      <ul aria-labelledby="clocks" className="space-y-2">
+        {clocks.map((c, n) => (
+          <li key={n}>
+            <div className="flex justify-between gap-2">
+              <span>{c.name}</span>
+              <span>{c.filled}/{c.segments}</span>
+            </div>
+            <div className="mt-1 flex gap-0.5" role="meter" aria-label={c.name}
+              aria-valuenow={c.filled} aria-valuemin={0} aria-valuemax={c.segments}>
+              {Array.from({ length: c.segments }, (_, i) => (
+                <div key={i} className={`h-2 flex-1 rounded-sm transition-colors duration-700 ${i < c.filled ? "bg-primary" : "bg-muted"}`} />
+              ))}
+            </div>
           </li>
         ))}
       </ul>

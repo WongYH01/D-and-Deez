@@ -77,6 +77,14 @@ def test_a_ready_bible_makes_no_claude_call(factory):
     assert camp.bible["title"] == "The Drowned Bell" and len(camp.beats) == 3
 
 
+def test_a_visible_clock_other_than_the_main_clock_passes_and_is_seeded_visible(factory):
+    b = fixture_bible()
+    b["clocks"][1]["visible"] = True
+    sess = start_campaign(factory, SETUP, "fighter", None, bible=b)
+    assert [(c.slug, c.visible) for c in story(factory, sess.id).clocks] == [
+        ("clock.tide", False), ("clock.suspicion", True)]
+
+
 def _two_clues(b):
     b["clues"] = [c for c in b["clues"] if c["slug"] != "clue.sluice.3"]
 
@@ -105,6 +113,7 @@ def _no_defeat(b):
     (_dangling, "one-shot", "Clue clue.sluice.1 is placed in Location 'loc.nowhere'"),
     (lambda b: None, "short", "A short needs 3 Act(s); the bible has 1"),
     (_two_mains, "one-shot", "exactly one Main clock; it has 2"),
+    (lambda b: b["clocks"][0].update(visible=True), "one-shot", "Main clock clock.tide is visible"),
     (_no_defeat, "one-shot", "endings.defeat: Field required"),
 ])
 def test_a_broken_bible_is_rejected(factory, break_it, length, error):

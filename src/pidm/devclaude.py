@@ -11,6 +11,7 @@ Each Turn answers by the player's action:
 - an action containing "roll" makes a Perception check first (a `roll` line);
 - "fight" starts an Encounter with two goblins, "hit" deals 3 damage to Goblin 1 (7 HP: wounded, bloodied, down)
   and "flee" ends the Encounter;
+- "wait" ticks the Visible clock "The cult grows suspicious" by 1 (the Main clock stays hidden);
 - anything else gets a short Narration.
 Every call waits `PIDM_FAKE_DELAY` seconds (default 1) so the thinking indicator and the locked input show.
 """
@@ -52,6 +53,7 @@ class DevClaude:
         time.sleep(self.delay)
         if self.role == "plan":
             bible = json.loads(BIBLE.read_text(encoding="utf-8"))
+            bible["clocks"][1]["visible"] = True  # a Visible clock for the sidebar; "wait" ticks it
             self.takes += 1
             if self.takes > 1:  # so a Regenerate visibly replaces the premise
                 bible["premise"] += f" (take {self.takes})"
@@ -83,4 +85,6 @@ class DevClaude:
             return _tool("apply_damage", {"target": "Goblin 1", "amount": "3", "damage_type": "slashing"})
         if "flee" in action and tools_enabled:
             return _tool("end_encounter", {})
+        if "wait" in action and tools_enabled:
+            return _tool("tick_clock", {"clock": "clock.suspicion", "segments": 1, "reason": "the Character waits"})
         return _text(f'(Dev Narration) "{action}": the fog shifts around you. What do you do?')

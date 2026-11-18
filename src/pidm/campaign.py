@@ -109,7 +109,7 @@ def _seed(camp: Campaign, bible: Bible) -> None:
             Clue(slug=c.slug, description=c.description, location=c.location)
             for c in bible.clues if c.secret == s.slug]))
     camp.clocks += [Clock(slug=c.slug, name=c.name, segments=c.segments, filled=0, consequence=c.consequence,
-                          is_main=c.main, visible=False) for c in bible.clocks]
+                          is_main=c.main, visible=c.visible) for c in bible.clocks]
     create_character(camp, camp.template, camp.character_name or None)
 
 
