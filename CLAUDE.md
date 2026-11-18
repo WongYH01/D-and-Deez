@@ -4,6 +4,10 @@ Single-player, text-based D&D 5e web app. Claude narrates; the app's code refere
 
 Tests run on the host in the repo's venv: `.venv/Scripts/pytest` (Windows) or `.venv/bin/pytest`. The Docker image has no test dependencies. Web UI (`src/web`, React + Vite): `npm test` (Vitest) and `npm run dev` there. UI test stubs for `fetch` and `EventSource`: `src/web/src/test/server.ts`. Add UI components with `npx shadcn@4.23.0 add <name>` in `src/web`, then point the new files' `cn` imports at `@/lib/utils` (the CLI writes `from "cn"`) and check `git status` from the repo root: the CLI edits files outside `src/web`.
 
+Change files with Edit or Write: shell-written text mangles backslashes and writes CRLF on Windows.
+
+New table: model in `src/pidm/models.py`, hand-written migration in `src/pidm/migrations/versions`, seeding in `_seed` and `clear_story` (`src/pidm/campaign.py`, which lists every Campaign-owned table), context in `user_message` (`src/pidm/prompts.py`). The session factory has autoflush off, so a query misses rows added earlier in the Turn: read the Campaign's relationship lists and `flush()` after adding.
+
 Tool registry: the `TOOLS` dict at the end of `src/pidm/tools.py`; story tools live in `src/pidm/story.py`. Test seams and `FakeClaude`: `tests/conftest.py` (seams listed in `CODING_STANDARDS.md`).
 
 Server: `create_app` in `src/pidm/app.py` (Seam 4, tests in `tests/test_server.py`; the `server` and `make_server` fixtures and the `create`, `start` and `act` helpers, where `act()` runs the Turn synchronously, are in `tests/conftest.py`). `fixture_bible` in `tests/conftest.py`: the Main clock is `clock.tide` (6 segments, so two 3-segment ticks fill it). Recaps: `src/pidm/recap.py`.

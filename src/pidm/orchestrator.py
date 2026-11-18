@@ -63,13 +63,17 @@ def _tokens(chars: int) -> int:
     return chars // 4
 
 
+def _size(history: list[dict], context: str) -> int:
+    return len(context) + sum(len(m["content"]) for m in history)
+
+
 def trim_history(history: list[dict], context: str, budget: int) -> list[dict]:
     """Drop the oldest action and Narration pairs until the history plus the dynamic context fits the budget.
 
     The context (state snapshot, Director block, recap block, Rule sections) is never cut; `retrieve` already
     caps Rule sections at two, so the oldest pairs are the only thing left to drop in v1.
     """
-    size = len(context) + sum(len(m["content"]) for m in history)
+    size = _size(history, context)
     while history and _tokens(size) > budget:
         size -= len(history[0]["content"]) + len(history[1]["content"])
         history = history[2:]
@@ -171,7 +175,8 @@ class TurnOrchestrator:
             system = [{"type": "text", "text": system_prompt(state.campaign), "cache_control": CACHE}]
             tools = tool_definitions()
             past = self._history(db, campaign_id)
-            seen = [player_text] + [m["content"] for m in past[-4:]]  # the action and the last two Narrations
+            # The action and the last two Narrations name the Entities whose Facts Claude needs.
+            seen = [player_text] + [m["content"] for m in past[-4:] if m["role"] == "assistant"]
 
             def build(hops: int) -> str:
                 world, notes = memory_blocks(state, seen, hops)
@@ -179,7 +184,7 @@ class TurnOrchestrator:
                                     recap_block(db, state.session), world, notes)
 
             context = build(HOPS)
-            if _tokens(len(context) + sum(len(m["content"]) for m in past)) > self.context_budget:
+            if _tokens(_size(past, context)) > self.context_budget:
                 context = build(1)  # Memory strategy: Facts more than one hop away go before recent Turns do
             history = trim_history(past, context, self.context_budget)
             messages = history + [{"role": "user", "content": [{"type": "text", "text": context,

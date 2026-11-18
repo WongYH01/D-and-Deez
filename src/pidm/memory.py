@@ -13,8 +13,9 @@ from pidm.models import Campaign, DmNote, Entity, Fact
 
 KINDS = ("npc", "place", "faction", "item")
 NOTE_CAP_CHARS = 2000  # about 500 tokens at the engine's characters / 4 estimate
-HOPS = 2
-# Aliases shorter than four letters are skipped; these longer ones are too common to name anyone.
+HOPS = 2  # Memory strategy: Facts within 2 hops of the Entities the context names
+MIN_ALIAS = 4  # Memory strategy: aliases shorter than this are skipped
+# Memory strategy: a stop list of aliases too common to name anyone.
 STOP_WORDS = {"them", "then", "this", "that", "with", "from", "what", "when", "your", "have", "will", "there", "here"}
 
 
@@ -23,7 +24,7 @@ def seed_entities(camp: Campaign, bible: Bible) -> None:
     for n in bible.npcs:
         # The part before a comma and its words name the NPC too ("Mira, Osric's widow" is "Mira").
         short = n.name.split(",")[0].strip()
-        aliases = [x for x in dict.fromkeys([short, *short.split()]) if x != n.name and len(x) >= 4]
+        aliases = [x for x in dict.fromkeys([short, *short.split()]) if x != n.name and len(x) >= MIN_ALIAS]
         camp.entities.append(Entity(name=n.name, kind="npc", aliases=aliases, summary=n.motive))
     for loc in bible.locations:
         camp.entities.append(Entity(name=loc.name, kind="place", aliases=[], summary=loc.purpose,
@@ -82,7 +83,7 @@ def t_retire_fact(state: GameState, fact_id: int) -> dict:
 
 
 def t_write_note(state: GameState, note: str, note_id: int | None = None) -> dict:
-    """Add a note, or with note_id replace it; an empty note deletes it. At the cap nothing is trimmed (Memory strategy)."""
+    """Add a note, or with note_id replace it; an empty note deletes it. At the cap nothing is trimmed (issue #28)."""
     camp = state.campaign
     old = None
     if note_id is not None:
@@ -103,17 +104,17 @@ def t_write_note(state: GameState, note: str, note_id: int | None = None) -> dic
     if old is not None:
         old.note, old.updated_turn = note, state.turn
         return {"note_id": old.id}
-    n = DmNote(note=note, updated_turn=state.turn)
-    camp.dm_notes.append(n)
+    new = DmNote(note=note, updated_turn=state.turn)
+    camp.dm_notes.append(new)
     state.db.flush()
-    return {"note_id": n.id}
+    return {"note_id": new.id}
 
 
 def _mentioned(camp: Campaign, texts: list[str]) -> set[int]:
     body = "\n".join(texts)
     out = set()
     for e in camp.entities:
-        for n in [e.name, *(a for a in e.aliases if len(a) >= 4 and a.lower() not in STOP_WORDS)]:
+        for n in [e.name, *(a for a in e.aliases if len(a) >= MIN_ALIAS and a.lower() not in STOP_WORDS)]:
             if re.search(rf"(?<!\w){re.escape(n)}(?!\w)", body, re.I):
                 out.add(e.id)
                 break

@@ -116,3 +116,27 @@ def test_npc_killed_in_one_session_is_dead_in_the_next(server):
     assert "Abbess Varn was killed by Wren" in ctx
     act(server, "I wait")
     assert "<notes>" in server.turn.requests[-1]["messages"][-1]["content"][0]["text"]
+
+
+def test_over_budget_context_drops_far_facts_before_history(factory):
+    from pidm.campaign import Setup, start_campaign
+    from pidm.orchestrator import TurnOrchestrator
+    from conftest import Events, FakeClaude
+    sid = start_campaign(factory, Setup("dark fantasy", "grim", "one-shot"), "fighter", None, bible=fixture_bible()).id
+    claude = FakeClaude(
+        text("ok"),  # Turn 0
+        [tool("add_fact", subject="Old Hesta", relation="is grandmother of", object="Tam", subject_kind="npc",
+              object_kind="npc"),
+         tool("add_fact", subject="Tam", relation="serves", object="The Choir", object_kind="faction")],
+        text("y" * 4000), text("ok"))
+    orch = TurnOrchestrator(factory, claude)
+    for action in ("begin", "set up the Facts", "I ask Hesta"):
+        orch.run_turn(sid, action, Events())
+
+    def context(c):
+        return c.requests[-1]["messages"][-1]["content"][0]["text"]
+
+    assert "serves The Choir" in context(claude)  # fits the default budget: two hops
+    tight = FakeClaude(text("ok"))
+    TurnOrchestrator(factory, tight, context_budget=900).run_turn(sid, "I ask Hesta", Events())
+    assert "is grandmother of Tam" in context(tight) and "serves The Choir" not in context(tight)
