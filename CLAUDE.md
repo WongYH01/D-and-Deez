@@ -8,6 +8,10 @@ Tool registry: the `TOOLS` dict at the end of `src/pidm/tools.py`; story tools l
 
 Server: `create_app` in `src/pidm/app.py` (Seam 4, tests in `tests/test_server.py`). Recaps: `src/pidm/recap.py`.
 
+Event contract for the UI: payloads in the design document's API surface section; emit order in `TurnOrchestrator._run` (`src/pidm/orchestrator.py`): `roll`*, `narration_delta`, `state_changed`, `turn_done`, or `error` on failure. `running_turn_seq` clears only after `turn_done`, and an event can beat the `POST /action` response.
+
+Check UI changes in a browser with no API key: run `PIDM_FAKE_CLAUDE=1 PIDM_DB=<temp>.sqlite PIDM_BACKUP_DIR=<temp> .venv/Scripts/uvicorn pidm.app:from_env --factory` from the repo root plus `npm run dev` in `src/web`. The scripted Turns are described in `src/pidm/devclaude.py`.
+
 ## Agent skills
 
 ### Issue tracker
