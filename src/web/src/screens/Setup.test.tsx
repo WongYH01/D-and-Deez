@@ -1,20 +1,7 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
+import { fakeServer } from "@/test/server";
 import { Setup } from "./Setup";
-
-type Call = { key: string; body: unknown };
-
-/** Stub `fetch` with a route table ("POST /campaigns" → handler); records every call. */
-function fakeServer(routes: Record<string, () => unknown>): Call[] {
-  const calls: Call[] = [];
-  vi.stubGlobal("fetch", async (url: string, init?: RequestInit) => {
-    const key = `${init?.method ?? "GET"} ${url}`;
-    calls.push({ key, body: init?.body ? JSON.parse(init.body as string) : undefined });
-    const handler = routes[key];
-    return handler ? Response.json(handler()) : Response.json({ detail: "No route." }, { status: 404 });
-  });
-  return calls;
-}
 
 const campaign = (status: string, extra: object = {}) => ({
   id: 7, name: "", status, length: "one-shot", premise: null, ending: null, setup_error: "", ...extra,

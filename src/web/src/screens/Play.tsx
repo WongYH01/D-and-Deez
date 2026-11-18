@@ -16,8 +16,13 @@ type StateView = {
     xp: number;
     xp_next_level: number | null;
     conditions: string[];
+    inventory: Item[];
   };
+  quests: { id: number; title: string; status: string; notes: string[] }[];
+  encounter: object | null;
 };
+
+type Item = { id: number; item: string; qty: number; equipped: boolean };
 
 const TURN_EVENTS = ["roll", "narration_delta", "turn_done", "error"] as const;
 
@@ -27,7 +32,18 @@ export function Play() {
   const [sending, setSending] = useState(false);
   const [notice, setNotice] = useState("");
 
+  // State answers can land in any order; show one only if its request was sent after the one on screen.
+  const asked = useRef(0);
+  const shown = useRef(0);
+  const show = useCallback((n: number, s: StateView) => {
+    if (n > shown.current) {
+      shown.current = n;
+      setView(s);
+    }
+  }, []);
+
   const refreshState = useCallback(async (): Promise<StateView | null> => {
+    const n = ++asked.current;
     const r = await fetch("/state");
     if (r.status === 404) {
       location.hash = "#/campaigns";
@@ -38,9 +54,9 @@ export function Play() {
       return null;
     }
     const s: StateView = await r.json();
-    setView(s);
+    show(n, s);
     return s;
-  }, []);
+  }, [show]);
 
   // Events have no ids and are never replayed, so every (re)connect rebuilds from GET /state and GET /log.
   const restore = useCallback(async () => {
@@ -81,13 +97,27 @@ export function Play() {
     }
   }
 
+  // Equip skips Claude: the server answers with the new state and tells other tabs through state_changed.
+  async function setEquipped(item: Item, on: boolean) {
+    setSending(true);
+    setNotice("");
+    try {
+      const n = ++asked.current;
+      const r = await fetch(`/inventory/${item.id}/${on ? "equip" : "unequip"}`, { method: "POST" });
+      if (r.ok) show(n, await r.json());
+      else setNotice((await r.json().catch(() => ({}))).detail ?? "The server refused the change.");
+    } finally {
+      setSending(false);
+    }
+  }
+
   const locked = !view || sending || isLocked(log, view.running_turn_seq);
   const live = log.turns.find((t) => t.status === "running");
   const thinking = !!view && locked && (!live || (live.rolls.length === 0 && !live.narration));
 
   return (
     <div className="grid gap-4 md:grid-cols-[16rem_1fr]">
-      {view && <SheetPanel view={view} />}
+      {view && <SheetPanel view={view} gearLocked={locked || !!view.encounter} onEquip={setEquipped} />}
       <section className="flex min-w-0 flex-col gap-3">
         <StoryLog turns={log.turns} thinking={thinking} onRetry={(t) => void submit(t.playerText)} locked={locked} />
         {notice && <p className="text-sm text-destructive">{notice}</p>}
@@ -97,7 +127,11 @@ export function Play() {
   );
 }
 
-function SheetPanel({ view: { character: c } }: { view: StateView }) {
+function SheetPanel({ view: { character: c, quests }, gearLocked, onEquip }: {
+  view: StateView;
+  gearLocked: boolean;
+  onEquip: (item: Item, on: boolean) => void;
+}) {
   return (
     <aside className="space-y-3 rounded-lg border bg-card p-4 text-sm">
       <div>
@@ -112,6 +146,38 @@ function SheetPanel({ view: { character: c } }: { view: StateView }) {
         <span className="text-muted-foreground">Conditions: </span>
         {c.conditions.length ? c.conditions.join(", ") : "none"}
       </p>
+      <section>
+        <h3 id="inventory" className="text-muted-foreground">Inventory</h3>
+        <ul aria-labelledby="inventory" className="mt-1 space-y-1">
+          {c.inventory.map((i) => {
+            const name = i.item.replaceAll("_", " ");
+            return (
+            <li key={i.id} className="flex items-center justify-between gap-2">
+              <span className="capitalize">{name}{i.qty > 1 && ` ×${i.qty}`}</span>
+              <span className="flex items-center gap-2">
+                {i.equipped && <span className="text-xs text-primary">equipped</span>}
+                <Button size="xs" variant="outline" disabled={gearLocked} onClick={() => onEquip(i, !i.equipped)}
+                  aria-label={`${i.equipped ? "Unequip" : "Equip"} ${name}`}>
+                  {i.equipped ? "Unequip" : "Equip"}
+                </Button>
+              </span>
+            </li>
+            );
+          })}
+        </ul>
+      </section>
+      <section>
+        <h3 id="quests" className="text-muted-foreground">Quests</h3>
+        <ul aria-labelledby="quests" className="mt-1 space-y-1">
+          {quests.map((q) => (
+            <li key={q.id} className="flex justify-between gap-2">
+              <span>{q.title}</span>
+              {q.status !== "active" && <span className="text-xs text-muted-foreground">{q.status}</span>}
+            </li>
+          ))}
+          {!quests.length && <li>none</li>}
+        </ul>
+      </section>
     </aside>
   );
 }
