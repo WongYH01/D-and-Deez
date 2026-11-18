@@ -35,6 +35,10 @@ type Encounter = {
 
 type Item = { id: number; item: string; qty: number; equipped: boolean };
 
+const ENDING_NAMES: Record<string, string> = {
+  victory: "Victory", defeat: "Defeat", fallen_hero: "Fallen hero", retired: "Retired",
+};
+
 const TURN_EVENTS = ["roll", "narration_delta", "turn_done", "error"] as const;
 
 export function Play() {
@@ -42,6 +46,9 @@ export function Play() {
   const [log, dispatch] = useReducer(foldLog, emptyLog);
   const [sending, setSending] = useState(false);
   const [notice, setNotice] = useState("");
+  // Every Ending closes the Session, so only the `campaign_ended` event carries it; a reload lands on Campaigns.
+  const [ending, setEnding] = useState<string | null>(null);
+  const ended = useRef(false);
 
   // State answers can land in any order; show one only if its request was sent after the one on screen.
   const asked = useRef(0);
@@ -57,7 +64,8 @@ export function Play() {
     const n = ++asked.current;
     const r = await fetch("/state");
     if (r.status === 404) {
-      location.hash = "#/campaigns";
+      // Retiring closes the Session, so the state is gone but the ended Campaign stays on screen.
+      if (!ended.current) location.hash = "#/campaigns";
       return null;
     }
     if (!r.ok) {
@@ -82,6 +90,10 @@ export function Play() {
     for (const type of TURN_EVENTS) {
       es.addEventListener(type, (e) => dispatch({ type, ...JSON.parse((e as MessageEvent).data) }));
     }
+    es.addEventListener("campaign_ended", (e) => {
+      ended.current = true; // before the state fetch below can 404
+      setEnding(JSON.parse((e as MessageEvent).data).ending);
+    });
     es.addEventListener("state_changed", () => void refreshState());
     // The committed log carries the action text, which another tab's events never sent.
     es.addEventListener("turn_done", () => void restore());
@@ -122,9 +134,9 @@ export function Play() {
     }
   }
 
-  const locked = !view || sending || isLocked(log, view.running_turn_seq);
+  const locked = !view || sending || ending !== null || isLocked(log, view.running_turn_seq);
   const live = log.turns.find((t) => t.status === "running");
-  const thinking = !!view && locked && (!live || (live.rolls.length === 0 && !live.narration));
+  const thinking = !!view && locked && ending === null && (!live || (live.rolls.length === 0 && !live.narration));
 
   return (
     <div className="grid gap-4 md:grid-cols-[16rem_1fr]">
@@ -136,7 +148,7 @@ export function Play() {
         </div>
       )}
       <section className="flex min-w-0 flex-col gap-3">
-        <StoryLog turns={log.turns} thinking={thinking} onRetry={(t) => void submit(t.playerText)} locked={locked} />
+        <StoryLog turns={log.turns} thinking={thinking} ending={ending} onRetry={(t) => void submit(t.playerText)} locked={locked} />
         {notice && <p className="text-sm text-destructive">{notice}</p>}
         <ActionBox locked={locked} onSubmit={submit} />
       </section>
@@ -273,9 +285,10 @@ function rollLine(r: Roll): string {
   return `[${r.purpose}] ${r.expr} = ${r.total}${vs}${outcome}`;
 }
 
-function StoryLog({ turns, thinking, locked, onRetry }: {
+function StoryLog({ turns, thinking, ending, locked, onRetry }: {
   turns: LogTurn[];
   thinking: boolean;
+  ending: string | null;
   locked: boolean;
   onRetry: (t: LogTurn) => void;
 }) {
@@ -283,7 +296,7 @@ function StoryLog({ turns, thinking, locked, onRetry }: {
   // Braces: Chrome's scrollIntoView returns a Promise, which React would call as the cleanup.
   useEffect(() => {
     end.current?.scrollIntoView?.({ block: "end" });
-  }, [turns, thinking]);
+  }, [turns, thinking, ending]);
   return (
     <div className="max-h-[70svh] min-h-64 space-y-4 overflow-y-auto rounded-lg border p-4 font-serif leading-relaxed"
       aria-live="polite">
@@ -306,6 +319,12 @@ function StoryLog({ turns, thinking, locked, onRetry }: {
           )}
         </div>
       ))}
+      {ending && (
+        <p className="border-t pt-3 text-center font-sans font-medium">
+          The Campaign has ended: {ENDING_NAMES[ending] ?? ending}.
+          <Button className="ml-3" render={<a href="#/setup" />} nativeButton={false}>New campaign</Button>
+        </p>
+      )}
       {thinking && <p className="animate-pulse font-sans text-sm text-muted-foreground">The Dungeon Master is thinking…</p>}
       <div ref={end} />
     </div>

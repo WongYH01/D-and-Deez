@@ -188,3 +188,37 @@ test("no Clocks panel shows when no Clock is visible", async () => {
   await screen.findByRole("list", { name: "Inventory" });
   expect(screen.queryByRole("list", { name: "Clocks" })).toBeNull();
 });
+
+test("campaign_ended shows the Ending after the epilogue, locks input and offers New campaign", async () => {
+  const emit = fakeEvents();
+  fakeServer({ "GET /state": () => state([]), "GET /log?session=1": () => [
+    { seq: 4, player_text: "I strike the king", narration: "The king falls. Peace returns.", rolls: [] },
+  ] });
+  render(<Play />);
+  await screen.findByText("The king falls. Peace returns.");
+
+  emit("campaign_ended", { campaign_id: 1, ending: "victory" });
+
+  await screen.findByText("The Campaign has ended: Victory.");
+  expect((screen.getByLabelText("Your action") as HTMLInputElement).disabled).toBe(true);
+  expect(screen.getByText("New campaign").closest("a")!.getAttribute("href")).toBe("#/setup");
+});
+
+test("a Retired Ending from another tab stays on screen though the Session is gone", async () => {
+  const emit = fakeEvents();
+  let gone = false;
+  fakeServer({
+    "GET /state": () => (gone ? Response.json({ detail: "No Session is open." }, { status: 404 }) : state([])),
+    "GET /log?session=1": () => [],
+  });
+  location.hash = "#/play";
+  render(<Play />);
+  await screen.findByRole("list", { name: "Inventory" });
+
+  gone = true;
+  emit("state_changed", { turn_seq: null });
+  emit("campaign_ended", { campaign_id: 1, ending: "retired" });
+
+  await screen.findByText("The Campaign has ended: Retired.");
+  expect(location.hash).toBe("#/play");
+});
