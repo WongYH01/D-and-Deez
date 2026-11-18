@@ -210,3 +210,16 @@ def test_a_generated_campaign_has_no_source_block(server):
     from conftest import create
     start(server, create(server))
     assert "<source>" not in server.turn.requests[0]["messages"][-1]["content"][0]["text"]
+
+
+def test_moving_swaps_the_source_text_and_the_ui_never_carries_it(server):
+    from conftest import act, tool
+    sid = upload(server).json()["source_id"]
+    cid = import_campaign(server, sid)
+    session = start(server, cid)
+    act(server, "I go to the mill.", tool("move_to", location="loc.mill"), text("The wheel groans."))
+    act(server, "I look around.")
+    ctx = server.turn.requests[-1]["messages"][-1]["content"][0]["text"]
+    assert "wheel groans" in ctx.split("<source>")[1].split("</source>")[0] and "Fog lies" not in ctx
+    ui = server.http.get("/state").text + server.http.get("/log", params={"session": session}).text
+    assert "third floorboard" not in ui and "Fog lies on the Reed Shore like wet wool" not in ui
