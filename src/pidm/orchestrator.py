@@ -222,7 +222,7 @@ class TurnOrchestrator:
                 usage.add(reply.usage)
                 narration = text_of(reply)
             end_overlong_scene(state)
-            met = ending_met(state)  # None once Claude called end_campaign, so no double ending
+            met = ending_met(state)  # Story design §6; None once Claude called end_campaign, so no double ending
             if met in ("defeat", "fallen_hero"):
                 end(state.campaign, met)  # Claude skipped end_campaign; a Victory still needs Claude's epilogue
             turn = Turn(session_id=session_id, seq=seq, player_text=player_text, narration=narration,
