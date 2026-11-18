@@ -31,6 +31,16 @@ afterEach(() => {
   location.hash = "";
 });
 
+test("Lines and Veils each explain themselves and show an example", () => {
+  fakeServer({ "GET /campaigns": () => [] });
+  render(<Setup />);
+  next(); next(); next();
+  expect(screen.getByText("Topics that never appear in the story.")).toBeTruthy();
+  expect(screen.getByText("Topics that may happen, but only off-screen.")).toBeTruthy();
+  expect(screen.getByPlaceholderText("e.g. graphic harm to children").id).toBe("lines");
+  expect(screen.getByPlaceholderText("e.g. torture").id).toBe("veils");
+});
+
 test("a Campaign set up in the wizard is generated, then shows only its premise", async () => {
   const calls = fakeServer({
     "POST /campaigns": () => ({ campaign_id: 7 }),
