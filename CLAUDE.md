@@ -4,9 +4,9 @@ Single-player, text-based D&D 5e web app. Claude narrates; the app's code refere
 
 Tests run on the host in the repo's venv: `.venv/Scripts/pytest` (Windows) or `.venv/bin/pytest`. The Docker image has no test dependencies. Web UI (`src/web`, React + Vite): `npm test` (Vitest) and `npm run dev` there. UI test stubs for `fetch` and `EventSource`: `src/web/src/test/server.ts`. Add UI components with `npx shadcn@4.23.0 add <name>` in `src/web`, then point the new files' `cn` imports at `@/lib/utils` (the CLI writes `from "cn"`) and check `git status` from the repo root: the CLI edits files outside `src/web`.
 
-Change files with Edit or Write: shell-written text mangles backslashes and writes CRLF on Windows.
+Change files with Edit or Write, including a one-line fix: a heredoc script turns a `\n` in your text into a real newline (a syntax error) and writes CRLF on Windows. After editing `dependencies` in `pyproject.toml`, run `.venv/Scripts/pip install -e .[dev]`.
 
-New table: model in `src/pidm/models.py`, hand-written migration in `src/pidm/migrations/versions`, seeding in `_seed` and `clear_story` (`src/pidm/campaign.py`, which lists every Campaign-owned table), context in `user_message` (`src/pidm/prompts.py`). The session factory has autoflush off, so a query misses rows added earlier in the Turn: read the Campaign's relationship lists and `flush()` after adding.
+New table: model in `src/pidm/models.py`, hand-written migration in `src/pidm/migrations/versions`, seeding in `_seed` and `clear_story` (`src/pidm/campaign.py`, which lists every Campaign-owned table), context in `user_message` (`src/pidm/prompts.py`). A table keyed by a child row, such as the `scene_vec` virtual table (created by its migration, written in `src/pidm/recall.py`), is not Campaign-owned and stays out of `clear_story`. The session factory has autoflush off, so a query misses rows added earlier in the Turn: read the Campaign's relationship lists and `flush()` after adding.
 
 Tool registry: the `TOOLS` dict at the end of `src/pidm/tools.py`; story tools live in `src/pidm/story.py`. Test seams and `FakeClaude`: `tests/conftest.py` (seams listed in `CODING_STANDARDS.md`).
 
