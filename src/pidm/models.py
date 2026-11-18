@@ -323,6 +323,9 @@ class SrdMonster(Base):
 
 
 class SrdSpell(Base):
+    # data keys the engine reads: level, casting_time, range, desc, higher_level, attack_type, area_of_effect,
+    # dc {dc_type, dc_success: none|half|other}, damage [{damage_type, damage_at_character_level | damage_at_slot_level}]
+    # and heal_at_slot_level (dice with "MOD"); tables map a level to dice, e.g. {"1": "3d6", "2": "4d6"}.
     __tablename__ = "srd_spells"
     slug: Mapped[str] = mapped_column(String(60), primary_key=True)
     name: Mapped[str] = mapped_column(String(100))
