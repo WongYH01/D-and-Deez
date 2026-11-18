@@ -964,7 +964,7 @@ def t_rest(state: GameState, kind: str, hit_dice: int = 0) -> dict:
             uses.pop(f, None)  # recover on a short or long rest (§9.2)
         out = {"kind": "short", "hit_dice_spent": spend, "healed": healed, "hp": ch.hp_current, "hit_dice_left": ch.hit_dice}
         if ch.char_class == "wizard" and not uses.get("arcane_recovery"):
-            # Arcane Recovery (SRD Wizard): once per day, slots of combined level up to half the Wizard's level
+            # R18 Arcane Recovery (SRD Wizard): once per day, slots of combined level up to half the Wizard's level
             # rounded up, none 6th or higher. shortcut: the engine picks the highest slots that fit, never asks.
             budget, got = (ch.level + 1) // 2, []
             for s in sorted(ch.spell_slots, key=lambda s: -s.level):
@@ -986,7 +986,7 @@ def t_rest(state: GameState, kind: str, hit_dice: int = 0) -> dict:
     ch.hit_dice += regained
     ch.feature_uses = {}
     for s in ch.spell_slots:
-        s.used = 0  # a long rest restores every slot (SRD Spellcasting)
+        s.used = 0  # a long rest restores every slot (R18)
     set_flag(ch, raging=None, frenzy=None, rage_rounds=None, hidden=None)
     exh = change_exhaustion(ch, -1)["exhaustion"] if ch.exhaustion else 0  # §5, §6.2
     ch.hp_current = hp_max(ch)
@@ -1026,7 +1026,7 @@ def t_adjust_gold(state: GameState, amount: int, reason: str) -> dict:
 
 
 def grow_slots(ch) -> None:
-    """Raise slot maximums to the table for the Character's level; spent slots stay spent."""
+    """Raise slot maximums to the table for the Character's level; spent slots stay spent (R18)."""
     have = {s.level: s for s in ch.spell_slots}
     for lvl, n in enumerate(srd.SPELL_SLOTS[ch.level], 1):
         if lvl in have:

@@ -51,7 +51,7 @@ TEMPLATES = {
         "equipped": [("greataxe", 1)],
         "gear": [("handaxe", 2), ("javelin", 4)] + _EXPLORERS_PACK,
     },
-    # Human Wizard (Arcane Tradition comes at level 2, so no subclass). Spells known are SRD Wizard list slugs;
+    # R18: Human Wizard (Arcane Tradition comes at level 2, so no subclass). Spells known are SRD Wizard list slugs;
     # prepared = Int modifier + level = 4 of the 6 in the spellbook.
     "wizard": {
         "name": "Elara", "race": "human", "char_class": "wizard", "subclass": "", "size": "medium",

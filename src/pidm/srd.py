@@ -133,7 +133,7 @@ CLASSES = {
     "cleric": {"hit_die": 8, "avg": 5, "saves": ("wis", "cha"),
                "weapons": {"simple"}, "asi_ability": "wis"},
 }
-# SRD Wizard and Cleric tables (identical full-caster slots): spell slots by Character level, indexed by slot level - 1.
+# R18: SRD Wizard and Cleric tables (identical full-caster slots): spell slots by Character level, indexed by slot level - 1.
 SPELL_SLOTS = {1: (2,), 2: (3,), 3: (4, 2), 4: (4, 3), 5: (4, 3, 2)}
 # §9.1 Rages per level (levels 1-5).
 RAGES = {1: 2, 2: 2, 3: 3, 4: 3, 5: 3}

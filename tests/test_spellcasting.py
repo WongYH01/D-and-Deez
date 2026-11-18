@@ -1,4 +1,4 @@
-"""Seam 1: caster Templates, spell slots and their recovery through the tool dispatcher."""
+"""Seam 1: caster Templates, spell slots and their recovery through the tool dispatcher (R18)."""
 
 from pidm.tools import snapshot
 
