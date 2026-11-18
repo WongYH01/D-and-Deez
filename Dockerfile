@@ -12,7 +12,6 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
-    DND_DB=/data/d-and-deez.sqlite \
     DND_WEB_DIR=/app/web
 
 WORKDIR /app
@@ -32,6 +31,9 @@ COPY --from=web /web/dist ./web
 # UID 1000 matches the first user on most Linux hosts, so host-created bind-mount folders are writable.
 RUN useradd --uid 1000 --create-home app
 USER app
+
+# DND_DB stays unset so the default `data/` resolves to the mounted /data and an old /data/pidm.sqlite is still opened.
+WORKDIR /
 
 EXPOSE 8000
 CMD ["uvicorn", "d_and_deez.app:from_env", "--factory", "--host", "0.0.0.0", "--port", "8000"]
