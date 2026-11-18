@@ -10,7 +10,7 @@ Server: `create_app` in `src/pidm/app.py` (Seam 4, tests in `tests/test_server.p
 
 Event contract for the UI: payloads in the design document's API surface section; emit order in `TurnOrchestrator._run` (`src/pidm/orchestrator.py`): `roll`*, `narration_delta`, `state_changed`, `turn_done`, or `error` on failure. `running_turn_seq` clears only after `turn_done`, and an event can beat the `POST /action` response.
 
-Check UI changes in a browser with no API key: run `PIDM_FAKE_CLAUDE=1 PIDM_DB=<temp>.sqlite PIDM_BACKUP_DIR=<temp> .venv/Scripts/uvicorn pidm.app:from_env --factory` from the repo root plus `npm run dev` in `src/web`. If port 8000 or 5173 is busy (the Vite proxy targets :8000 only): run `npm run build` in `src/web`, then add `--port <free>` to the uvicorn command; it serves the UI at `/`. After a rebuild, load a new URL (`/?r=1#/play`): a hash change keeps the old bundle. The scripted Turns are described in `src/pidm/devclaude.py`.
+Check UI changes in a browser with no API key: run `PIDM_FAKE_CLAUDE=1 PIDM_DB=<temp>.sqlite PIDM_BACKUP_DIR=<temp> .venv/Scripts/uvicorn pidm.app:from_env --factory` from the repo root plus `npm run dev` in `src/web`. If port 8000 or 5173 is busy (the Vite proxy targets :8000 only): run `npm run build` in `src/web`, then add `--port 0` to the uvicorn command and read the port from its `Uvicorn running on` log line; it serves the UI at `/`. Stop the servers you start before you finish. After a rebuild, load a new URL (`/?r=1#/play`): a hash change keeps the old bundle. The scripted Turns are described in `src/pidm/devclaude.py`.
 
 ## Agent skills
 
