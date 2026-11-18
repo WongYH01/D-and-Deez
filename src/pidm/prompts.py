@@ -78,12 +78,16 @@ def system_prompt(campaign: Campaign) -> str:
 
 def user_message(snapshot: dict, player_text: str, rules: list[dict] | None = None, director: str | None = None,
                  recap: str | None = None, world: str | None = None, notes: str | None = None,
-                 recall: list[str] | None = None) -> str:
-    """Dynamic context: the state snapshot, the Director block, the recap block, recalled Scenes, world Facts, DM
-    notes, any Rule sections the action names, then the action."""
+                 recall: list[str] | None = None, source: str | None = None) -> str:
+    """Dynamic context: the state snapshot, the Director block, the author's text for the current Location (imported
+    adventures), the recap block, recalled Scenes, world Facts, DM notes, any Rule sections the action names, then the
+    action."""
     out = f"<state>\n{json.dumps(snapshot, separators=(',', ':'))}\n</state>\n\n"
     if director:
         out += f"<director>\n{director}\n</director>\n\n"
+    if source:
+        out += (f"<source>\nThe adventure author's text for this Location. Narrate from it and keep read-aloud text "
+                f"close to the author's wording; never quote it as a document.\n{source}\n</source>\n\n")
     if recap:
         out += f"<recap>\n{recap}\n</recap>\n\n"
     if recall:

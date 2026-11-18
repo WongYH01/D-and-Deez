@@ -4,7 +4,8 @@ import { fakeServer } from "@/test/server";
 import { Setup } from "./Setup";
 
 const campaign = (status: string, extra: object = {}) => ({
-  id: 7, name: "", status, length: "one-shot", premise: null, ending: null, setup_error: "", adapted: false, ...extra,
+  id: 7, name: "", status, length: "one-shot", premise: null, ending: null, setup_error: "", adapted: false,
+  source_id: null, summary: null, warnings: [], ...extra,
 });
 
 /** GET /campaigns answers each list in turn, then repeats the last. */
@@ -108,4 +109,75 @@ test("a Campaign gone from the list stops the spinner with an error", async () =
   fillAndSubmit();
 
   expect(await screen.findByText("The Campaign no longer exists.")).toBeTruthy();
+});
+
+const adventure = () => new File(["# The Reed Shore\nFog."], "bell.md", { type: "text/markdown" });
+
+/** Switch to the import path, choose a file and walk its three steps. */
+function importAndSubmit() {
+  fireEvent.click(screen.getByRole("button", { name: "Import an adventure instead" }));
+  fireEvent.change(screen.getByLabelText(/Adventure file/), { target: { files: [adventure()] } });
+  next(); // Adventure
+  next(); // Lines and veils
+  fireEvent.click(screen.getByRole("button", { name: "Create campaign" })); // Character
+}
+
+const review = { source_id: 3, summary: { acts: 2, npcs: 5, locations: 9 }, warnings: ["Harder for one Character."] };
+
+test("an imported adventure is uploaded, then reviewed as counts and warnings only", async () => {
+  const calls = fakeServer({
+    "POST /sources?filename=bell.md": () => ({ source_id: 3 }),
+    "POST /campaigns": () => ({ campaign_id: 7 }),
+    "GET /campaigns": lists([campaign("ready", { premise: "A drowned bell.", ...review })]),
+  });
+  render(<Setup />);
+  importAndSubmit();
+
+  expect(await screen.findByText("A drowned bell.")).toBeTruthy();
+  expect(screen.getByText("2 acts, 5 NPCs, 9 locations")).toBeTruthy();
+  expect(screen.getByText("Harder for one Character.")).toBeTruthy();
+  expect((calls[0].body as File).name).toBe("bell.md");
+  expect(calls[1]).toEqual({
+    key: "POST /campaigns",
+    body: { lines: "", veils: "", template: "fighter", character_name: "", hook: "", source_id: 3 },
+  });
+});
+
+test("Cancel deletes the imported source and returns to the form", async () => {
+  const calls = fakeServer({
+    "POST /sources?filename=bell.md": () => ({ source_id: 3 }),
+    "POST /campaigns": () => ({ campaign_id: 7 }),
+    "GET /campaigns": lists([campaign("ready", { premise: "A drowned bell.", ...review })]),
+    "DELETE /sources/3": () => ({}),
+  });
+  render(<Setup />);
+  importAndSubmit();
+  fireEvent.click(await screen.findByRole("button", { name: "Cancel" }));
+
+  expect(await screen.findByText("New campaign")).toBeTruthy();
+  expect(calls.at(-1)?.key).toBe("DELETE /sources/3");
+});
+
+test("a rejected upload shows the reason and stays on the form", async () => {
+  fakeServer({
+    "POST /sources?filename=bell.md": () => Response.json({ detail: "That PDF has no text layer." }, { status: 400 }),
+  });
+  render(<Setup />);
+  importAndSubmit();
+
+  expect(await screen.findByText("That PDF has no text layer.")).toBeTruthy();
+  expect(screen.getByLabelText(/Adventure file/)).toBeTruthy();
+});
+
+test("a generated Campaign's review has no Cancel and no warnings", async () => {
+  fakeServer({
+    "POST /campaigns": () => ({ campaign_id: 7 }),
+    "GET /campaigns": lists([campaign("ready", { premise: "A drowned bell." })]),
+  });
+  render(<Setup />);
+  fillAndSubmit();
+
+  expect(await screen.findByText("A drowned bell.")).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Cancel" })).toBeNull();
+  expect(screen.queryByLabelText("Warnings")).toBeNull();
 });

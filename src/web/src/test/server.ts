@@ -10,7 +10,8 @@ export function fakeServer(routes: Record<string, () => unknown>): Call[] {
   const calls: Call[] = [];
   vi.stubGlobal("fetch", async (url: string, init?: RequestInit) => {
     const key = `${init?.method ?? "GET"} ${url}`;
-    calls.push({ key, body: init?.body ? JSON.parse(init.body as string) : undefined });
+    // A string body is JSON; an upload's body (a File) is recorded as it is.
+    calls.push({ key, body: typeof init?.body === "string" ? JSON.parse(init.body) : init?.body });
     const handler = routes[key];
     if (!handler) return Response.json({ detail: "No route." }, { status: 404 });
     const out = await handler();

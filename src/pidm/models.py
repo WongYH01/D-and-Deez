@@ -47,8 +47,9 @@ class Campaign(Base):
     # Player notes: the player's own page, never sent to Claude and outside every Turn's transaction.
     player_notes: Mapped[str] = mapped_column(Text, default="")
     auto_roll: Mapped[bool] = mapped_column(Boolean, default=False)  # skip Roll prompts
+    source_id: Mapped[int | None] = mapped_column(ForeignKey("sources.id"), nullable=True)  # imported adventure
 
-    character: Mapped["Character"] = relationship(back_populates="campaign", uselist=False, cascade="all, delete-orphan")
+    character:Mapped["Character"] = relationship(back_populates="campaign", uselist=False, cascade="all, delete-orphan")
     quests: Mapped[list["Quest"]] = relationship(back_populates="campaign", cascade="all, delete-orphan", order_by="Quest.id")
     sessions: Mapped[list["Session"]] = relationship(back_populates="campaign", cascade="all, delete-orphan", order_by="Session.id")
     beats: Mapped[list["Beat"]] = relationship(back_populates="campaign", cascade="all, delete-orphan", order_by="Beat.id")
@@ -59,6 +60,18 @@ class Campaign(Base):
     dm_notes: Mapped[list["DmNote"]] = relationship(back_populates="campaign", cascade="all, delete-orphan", order_by="DmNote.id")
     bible_versions: Mapped[list["BibleVersion"]] = relationship(
         back_populates="campaign", cascade="all, delete-orphan", order_by="BibleVersion.version")
+
+
+class Source(Base):
+    """An uploaded adventure file. Its split text lives in the `source_chunks` FTS5 table (pidm.sources); a source is
+    shared by nothing but the Campaigns that import it, so it is not Campaign-owned."""
+    __tablename__ = "sources"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    title: Mapped[str] = mapped_column(String(200))
+    author: Mapped[str] = mapped_column(String(200), default="")
+    path: Mapped[str] = mapped_column(Text, default="")
+    sha256: Mapped[str] = mapped_column(String(64))
+    imported_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 
 class BibleVersion(Base):

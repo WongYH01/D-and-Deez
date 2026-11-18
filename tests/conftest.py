@@ -227,10 +227,12 @@ def make_server(factory, tmp_path):
     def make(turn=(), plan=(), recap=(), web_dir=None, embedder=None):
         clients = SimpleNamespace(turn=FakeClaude(*turn), plan=FakeClaude(*plan), recap=FakeClaude(*recap))
         app = create_app(factory, turn_client=clients.turn, plan_client=clients.plan, recap_client=clients.recap,
-                         backup_dir=tmp_path / "backups", inline=True, web_dir=web_dir, embedder=embedder)
+                         backup_dir=tmp_path / "backups", inline=True, web_dir=web_dir, embedder=embedder,
+                         sources_dir=tmp_path / "sources")
         events = Events()
         app.state.broadcaster.subscribe(events)
-        return SimpleNamespace(http=TestClient(app), events=events, backups=tmp_path / "backups", **vars(clients))
+        return SimpleNamespace(http=TestClient(app), events=events, backups=tmp_path / "backups",
+                               sources=tmp_path / "sources", **vars(clients))
     return make
 
 

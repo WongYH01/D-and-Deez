@@ -259,6 +259,8 @@ Deferred to v2 (M6); v1 campaigns are always generated. From v2, a campaign can 
 
 **M6d decisions.** Import is a separate "Import adventure" path on the Setup screen: the player uploads a PDF or text file, text is extracted locally (a PDF with no text layer is rejected with a clear error), Claude converts the text to a bible, and the player reviews a spoiler-free premise plus warnings before accepting; cancelling deletes the source. The usual setup choices (Template, Ruleset, Lines and veils) still apply. Retrieval gives Claude only the `source_chunks` for the Character's current Location, never the whole text, and never shows them in the UI. The first release ships import, schema validation and per-location retrieval only; solo scaling (sidekick, bonus levels, save rerolls) is a later design once a real adventure has been imported, and the review warns that party-of-four adventures are harder for one Character.
 
+**As built (M6d).** Upload and conversion are two calls (`POST /sources`, then `POST /campaigns` with `source_id`). Text is split at Markdown or ALL-CAPS headings (long sections at paragraph breaks) and a chunk whose heading names a bible Location or NPC is tagged to it (`kind`, `ref`). The conversion prompt asks Claude to fill the gaps (three clues, a Main clock, a defeat ending) and the result must pass the generated schema, with 1 to 3 Acts; the Campaign's `length` is `imported`. `GET /campaigns` gives an imported Campaign `source_id`, `summary` (counts of acts, NPCs and locations) and `warnings`, never the plan or the text. A Turn's context carries the author's text for the current Location in a `<source>` block (6,000 characters at most). Monster mapping and the solo-scaling steps below are not built.
+
 **Pipeline**
 
 1. **Upload.** The setup wizard accepts a PDF, Markdown or text file, stored under `/data/sources`.
@@ -360,6 +362,9 @@ The browser sends commands over plain HTTP and receives everything a turn produc
 | `GET /` | The setup wizard or the play screen | HTML |
 | `GET /health` | Liveness check for the container | 200 |
 | `POST /campaigns` | Create a campaign from the setup form; a job generates the bible and validates it | 202 with `campaign_id`; status is `generating`, then `ready` (premise shown) or `failed` (with `setup_error`) |
+| `POST /sources?filename=<name>` | Import step 1: the raw PDF, Markdown or text file as the body; its text is extracted locally and stored in `sources` and `source_chunks` | 200 with `source_id`; 400 with the reason (no text layer, unreadable, not UTF-8, empty, wrong type, too long); 413 over 50 MB |
+| `DELETE /sources/{id}` | Cancel an import: deletes the source, its file, its chunks and its unplayed (`ready` or `failed`) Campaign | 200; 404 unknown; 409 once a Campaign using it is generating, active or complete |
+| `POST /campaigns` with `source_id` | Import step 2: converts the stored adventure to the bible (setting, tone and length come from it; Template, Lines and veils, name and hook apply); one Campaign per source | 202 as above; 404 unknown source; 409 source already used |
 | `POST /campaigns/{id}/regenerate` | Replace a `ready` campaign's bible with a new one | 202; status returns to `generating` |
 | `POST /campaigns/{id}/retire` | The player ends the campaign: Retired, no Claude call | 200; 409 while a turn is running |
 | `GET /campaigns` | List campaigns and their status, with `adapted` (true once a replan saved a new bible version) | JSON |

@@ -88,10 +88,14 @@ class Bible(BaseModel):
     opening_scene: str = Field(description="Starts mid-action, ties to the backstory hook, ends on a question")
 
 
-def check(b: Bible, length: str) -> list[str]:
-    """Human-readable errors for what the schema cannot express; empty when the bible is sound (Story design §2)."""
+def check(b: Bible, length: str | None) -> list[str]:
+    """Human-readable errors for what the schema cannot express; empty when the bible is sound (Story design §2).
+    An imported adventure has no chosen length (`None`, or the Campaign's "imported"): it may have 1 to 3 Acts."""
     errors = []
-    if len(b.acts) != ACTS[length]:
+    if length not in ACTS:
+        if not 1 <= len(b.acts) <= 3:
+            errors.append(f"The bible needs 1 to 3 Acts; it has {len(b.acts)}.")
+    elif len(b.acts) != ACTS[length]:
         errors.append(f"A {length} needs {ACTS[length]} Act(s); the bible has {len(b.acts)}.")
     slugs = [x.slug for x in [*b.acts, *(bt for a in b.acts for bt in a.beats), *b.secrets, *b.clues, *b.clocks,
                               *b.locations]]
@@ -136,7 +140,7 @@ def check(b: Bible, length: str) -> list[str]:
     return errors
 
 
-def validate(data, length: str) -> tuple[Bible | None, list[str]]:
+def validate(data, length: str | None) -> tuple[Bible | None, list[str]]:
     """Schema first, then the code checks. Returns the bible, or None with the errors."""
     try:
         b = Bible.model_validate(data)

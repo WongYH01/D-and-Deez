@@ -22,6 +22,7 @@ from pidm.models import Campaign, RollRecord, Session, Turn
 from pidm.prompts import OPENING, RESUME, system_prompt, user_message
 from pidm.recap import recap_block
 from pidm.scenes import end_overlong_scene
+from pidm.sources import location_text
 from pidm.recall import Embedder, recall
 from pidm.rules import retrieve
 from pidm.story import director_block, end, ending_met
@@ -182,8 +183,10 @@ class TurnOrchestrator:
 
             def build(hops: int, scenes: list[str]) -> str:
                 world, notes = memory_blocks(state, seen, hops)
+                camp = state.campaign
+                source = location_text(db, camp.source_id, camp.current_location) if camp.source_id else None
                 return user_message(snapshot(state), player_text, retrieve(db, player_text), director_block(state),
-                                    recap_block(db, state.session), world, notes, scenes)
+                                    recap_block(db, state.session), world, notes, scenes, source)
 
             scenes = recall(self.factory, self.embedder, campaign_id, player_text)  # inline; never fails the Turn
             context = build(HOPS, scenes)

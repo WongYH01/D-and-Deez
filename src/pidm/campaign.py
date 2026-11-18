@@ -16,11 +16,13 @@ from pidm.bible import ACTS, Bible, validate
 from pidm.claude import ClaudeClient
 from pidm.memory import seed_entities
 from pidm.models import Beat, BibleVersion, Campaign, Clock, Clue, Secret, Session
+from pidm.sources import IMPORT_SYSTEM, full_text, tag_chunks
 from pidm.story import end
 from pidm.templates import create_character
 
 PLAN_TOOL = "write_campaign_bible"
 ATTEMPTS = 3
+IMPORTED = "imported"  # Campaign.length of an imported adventure: it has no chosen length
 
 
 class SetupError(Exception):
@@ -94,6 +96,14 @@ def _generate(client: ClaudeClient, setup: Setup) -> Bible:
     return ask_bible(client, PLAN_SYSTEM, _request(setup), PLAN_TOOL, lambda data: validate(data, setup.length))
 
 
+def _import(client: ClaudeClient, body: str, setup: Setup) -> Bible:
+    """Convert an adventure's text to a bible; the length is the adventure's own (1 to 3 Acts)."""
+    request = (f"Lines (never shown): {setup.lines or 'none'}\nVeils (off-screen only): {setup.veils or 'none'}\n"
+               f"Character backstory hook for the opening scene: {setup.hook or 'none'}\n\n"
+               f"<adventure>\n{body}\n</adventure>")
+    return ask_bible(client, IMPORT_SYSTEM, request, PLAN_TOOL, lambda data: validate(data, IMPORTED))
+
+
 def new_campaign(setup: Setup, template: str, name: str | None, status: str) -> Campaign:
     """A Campaign row holding the setup choices, before its bible exists."""
     return Campaign(name="", premise="", setting=setup.setting, tone=setup.tone, length=setup.length,
@@ -157,9 +167,11 @@ def build_campaign(factory: sessionmaker, client: ClaudeClient, campaign_id: int
     The Claude calls run outside any transaction; any failure leaves the Campaign `failed` with its error.
     """
     with factory() as db:
-        setup = setup_of(db.get(Campaign, campaign_id))
+        camp = db.get(Campaign, campaign_id)
+        setup, source_id = setup_of(camp), camp.source_id
+        body = full_text(db, source_id) if source_id else ""
     try:
-        bible = _generate(client, setup)
+        bible = _import(client, body, setup) if source_id else _generate(client, setup)
         error = None
     except Exception as e:  # SetupError, or a Claude API error after retries
         bible, error = None, str(e) or type(e).__name__
@@ -169,6 +181,9 @@ def build_campaign(factory: sessionmaker, client: ClaudeClient, campaign_id: int
             camp.status, camp.setup_error = "failed", error
         else:
             _seed(camp, bible)
+            if source_id:
+                camp.length = IMPORTED
+                tag_chunks(db, source_id, bible)
             db.add(camp.character)  # SQLAlchemy 2 does not cascade the backref into the open session
             camp.status = "ready"
         db.commit()

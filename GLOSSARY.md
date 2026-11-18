@@ -96,6 +96,10 @@ _Avoid_: Chunk, rule
 The hidden plan for a Campaign, generated at setup: premise, antagonist, Acts, Beats, Secrets, Clues, Clocks, NPCs, locations, Endings and the opening scene.
 _Avoid_: Plan, script, outline
 
+**Source**:
+An uploaded adventure file, kept on this machine with its text split into chunks. A Campaign started from one is an imported Campaign; its bible comes from the author's adventure, and the author's text for the current Location reaches Claude each Turn but never the UI.
+_Avoid_: Module, import file
+
 **Act**:
 A major part of a Campaign with its own goal, made of 2 to 4 Beats.
 _Avoid_: Chapter, arc
