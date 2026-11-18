@@ -78,10 +78,11 @@ def _generate(client: ClaudeClient, setup: Setup) -> Bible:
             return bible
         feedback = "The bible failed these checks; call write_campaign_bible again with a corrected bible:\n- " + \
             "\n- ".join(errors)
-        messages = messages + [
-            {"role": "assistant", "content": reply.content},
-            {"role": "user", "content": [{"type": "tool_result", "tool_use_id": call["id"], "content": feedback,
-                                          "is_error": True}] if call else feedback}]
+        # The API wants a tool_result for every tool_use in the reply, and the model may call the tool more than once.
+        results = [{"type": "tool_result", "tool_use_id": b["id"], "content": feedback, "is_error": True}
+                   for b in reply.content if b["type"] == "tool_use"]
+        messages = messages + [{"role": "assistant", "content": reply.content},
+                               {"role": "user", "content": results or feedback}]
     raise SetupError(f"No valid Campaign bible after {ATTEMPTS} attempts: {'; '.join(errors)}")
 
 

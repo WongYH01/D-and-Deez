@@ -60,6 +60,16 @@ def test_an_invalid_bible_is_regenerated_with_the_errors_fed_back(factory):
     assert story(factory, sess.id).name == "The Drowned Bell"
 
 
+def test_every_tool_call_in_a_rejected_reply_gets_a_tool_result(factory):
+    broken = fixture_bible()
+    broken["clues"] = [c for c in broken["clues"] if c["slug"] != "clue.rope.3"]
+    first, second = bible_call(broken), bible_call(broken)
+    claude = FakeClaude([first, second], bible_call(fixture_bible()))
+    start_campaign(factory, SETUP, "fighter", None, client=claude)
+    results = claude.requests[1]["messages"][-1]["content"]
+    assert [r["tool_use_id"] for r in results] == [first["id"], second["id"]]
+
+
 def test_three_failed_attempts_raise_a_setup_error(factory):
     broken = fixture_bible()
     broken["clocks"][1]["main"] = True
