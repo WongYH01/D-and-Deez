@@ -1,25 +1,18 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerTrigger } from "@/components/ui/drawer";
-import { type LogTurn, type Roll, emptyLog, foldLog, isLocked } from "@/play/log";
+import { type LogTurn, type Roll, type RollPrompt, emptyLog, foldLog, isLocked } from "@/play/log";
+import { type Character, type Item, type Quest, Sheet } from "@/screens/Sheet";
 
 /** The parts of `GET /state` the play screen shows. */
 type StateView = {
   session_id: number;
+  campaign_id: number;
   running_turn_seq: number | null;
-  character: {
-    name: string;
-    class: string;
-    level: number;
-    hp: number;
-    hp_max: number;
-    temp_hp: number;
-    xp: number;
-    xp_next_level: number | null;
-    conditions: string[];
-    inventory: Item[];
-  };
-  quests: { id: number; title: string; status: string; notes: string[] }[];
+  pending_prompt: ({ turn_seq: number } & RollPrompt) | null;
+  auto_roll: boolean;
+  character: Character;
+  quests: Quest[];
   encounter: Encounter | null;
   clocks: Clock[];
 };
@@ -34,13 +27,11 @@ type Encounter = {
   order: { name: string; initiative: number; conditions: string[]; health: string }[];
 };
 
-type Item = { id: number; item: string; qty: number; equipped: boolean };
-
 const ENDING_NAMES: Record<string, string> = {
   victory: "Victory", defeat: "Defeat", fallen_hero: "Fallen hero", retired: "Retired",
 };
 
-const TURN_EVENTS = ["roll", "narration_delta", "turn_done", "error"] as const;
+const TURN_EVENTS = ["roll", "roll_prompt", "narration_delta", "narration_discard", "turn_done", "error"] as const;
 
 /** True from the `md` breakpoint up, where the sheet sits beside the log; no matchMedia (tests) counts as wide. */
 function useWide(): boolean {
@@ -73,6 +64,8 @@ export function Play() {
     if (n > shown.current) {
       shown.current = n;
       setView(s);
+      // A reload mid-Turn restores the open Roll prompt; the log drops it if it was already answered.
+      if (s.pending_prompt) dispatch({ type: "roll_prompt", ...s.pending_prompt });
     }
   }, []);
 
@@ -150,13 +143,36 @@ export function Play() {
     }
   }
 
+  async function roll(turn_seq: number, n: number) {
+    const r = await fetch("/roll", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ turn_seq, n }),
+    });
+    // 409: the prompt was already answered (another tab, Auto-roll, the timeout), so it closes here too.
+    if (r.ok || r.status === 409) dispatch({ type: "prompt_answered", turn_seq, n });
+    else setNotice("The roll could not be made.");
+  }
+
+  async function setAutoRoll(on: boolean) {
+    const r = await fetch(`/campaigns/${view!.campaign_id}/auto_roll`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ on }),
+    });
+    if (r.ok) await refreshState();
+    else setNotice("The setting could not be saved.");
+  }
+
   const locked = !view || sending || ending !== null || isLocked(log, view.running_turn_seq);
   const live = log.turns.find((t) => t.status === "running");
-  const thinking = !!view && locked && ending === null && (!live || (live.rolls.length === 0 && !live.narration));
+  const prompt = live?.prompt ?? null;
+  const thinking = !!view && locked && ending === null && !prompt && (!live || (live.rolls.length === 0 && !live.narration));
 
   const sheet = view && (
     <div className="space-y-4">
-      <SheetPanel view={view} gearLocked={locked || !!view.encounter} onEquip={setEquipped} />
+      <Sheet character={view.character} quests={view.quests} campaignId={view.campaign_id}
+        gearLocked={locked || !!view.encounter} onEquip={setEquipped} />
       {view.encounter && <EncounterPanel encounter={view.encounter} />}
       {view.clocks.length > 0 && <ClocksPanel clocks={view.clocks} />}
     </div>
@@ -182,64 +198,16 @@ export function Play() {
         )}
         <StoryLog turns={log.turns} thinking={thinking} ending={ending} onRetry={(t) => void submit(t.playerText)} locked={locked} />
         {notice && <p className="text-sm text-destructive">{notice}</p>}
+        {live && prompt && <RollCard prompt={prompt} onRoll={() => roll(live.seq, prompt.n)} />}
         <ActionBox locked={locked} onSubmit={submit} />
+        {view && (
+          <label className="flex shrink-0 items-center gap-2 text-sm text-muted-foreground">
+            <input type="checkbox" checked={view.auto_roll} onChange={(e) => void setAutoRoll(e.target.checked)} />
+            Auto-roll (skip the Roll button)
+          </label>
+        )}
       </section>
     </div>
-  );
-}
-
-function SheetPanel({ view: { character: c, quests }, gearLocked, onEquip }: {
-  view: StateView;
-  gearLocked: boolean;
-  onEquip: (item: Item, on: boolean) => void;
-}) {
-  return (
-    <aside className="space-y-3 rounded-lg border bg-card p-4 text-sm">
-      <div>
-        <h2 className="font-heading text-lg">{c.name}</h2>
-        <p className="text-muted-foreground capitalize">
-          Level {c.level} {c.class}
-        </p>
-      </div>
-      <Bar label="HP" value={c.hp} max={c.hp_max} extra={c.temp_hp ? ` +${c.temp_hp} temp` : ""} />
-      <Bar label="XP" value={c.xp} max={c.xp_next_level ?? c.xp} />
-      <p>
-        <span className="text-muted-foreground">Conditions: </span>
-        {c.conditions.length ? c.conditions.join(", ") : "none"}
-      </p>
-      <section>
-        <h3 id="inventory" className="text-muted-foreground">Inventory</h3>
-        <ul aria-labelledby="inventory" className="mt-1 space-y-1">
-          {c.inventory.map((i) => {
-            const name = i.item.replaceAll("_", " ");
-            return (
-            <li key={i.id} className="flex items-center justify-between gap-2">
-              <span className="capitalize">{name}{i.qty > 1 && ` ×${i.qty}`}</span>
-              <span className="flex items-center gap-2">
-                {i.equipped && <span className="text-xs text-primary">equipped</span>}
-                <Button size="xs" variant="outline" disabled={gearLocked} onClick={() => onEquip(i, !i.equipped)}
-                  aria-label={`${i.equipped ? "Unequip" : "Equip"} ${name}`}>
-                  {i.equipped ? "Unequip" : "Equip"}
-                </Button>
-              </span>
-            </li>
-            );
-          })}
-        </ul>
-      </section>
-      <section>
-        <h3 id="quests" className="text-muted-foreground">Quests</h3>
-        <ul aria-labelledby="quests" className="mt-1 space-y-1">
-          {quests.map((q) => (
-            <li key={q.id} className="flex justify-between gap-2">
-              <span>{q.title}</span>
-              {q.status !== "active" && <span className="text-xs text-muted-foreground">{q.status}</span>}
-            </li>
-          ))}
-          {!quests.length && <li>none</li>}
-        </ul>
-      </section>
-    </aside>
   );
 }
 
@@ -292,25 +260,6 @@ function ClocksPanel({ clocks }: { clocks: Clock[] }) {
   );
 }
 
-function Bar({ label, value, max, extra = "" }: { label: string; value: number; max: number; extra?: string }) {
-  const pct = max > 0 ? Math.min(100, (value / max) * 100) : 100;
-  return (
-    <div>
-      <div className="flex justify-between">
-        <span className="text-muted-foreground">{label}</span>
-        <span>
-          {value}/{max}
-          {extra}
-        </span>
-      </div>
-      <div className="mt-1 h-2 overflow-hidden rounded-full bg-muted" role="meter" aria-label={label}
-        aria-valuenow={value} aria-valuemin={0} aria-valuemax={max}>
-        <div className="h-full bg-primary transition-[width] duration-700 ease-out" style={{ width: `${pct}%` }} />
-      </div>
-    </div>
-  );
-}
-
 function rollLine(r: Roll): string {
   const vs = r.target !== null ? ` vs ${r.target}` : "";
   const outcome = r.outcome ? `: ${r.outcome}` : "";
@@ -359,6 +308,26 @@ function StoryLog({ turns, thinking, ending, locked, onRetry }: {
       )}
       {thinking && <p className="animate-pulse font-sans text-sm text-muted-foreground">The Dungeon Master is thinking…</p>}
       <div ref={end} />
+    </div>
+  );
+}
+
+/** "Wren perception check, DC 12, +3, advantage": what the player is about to roll. */
+export function promptLine(p: RollPrompt): string {
+  // An attack's purpose already names its target.
+  const against = p.versus ? (p.purpose.includes(p.versus) ? "" : `vs ${p.versus}`) : p.target !== null ? `DC ${p.target}` : "";
+  const bonus = p.bonus >= 0 ? `+${p.bonus}` : `−${-p.bonus}`;
+  return [p.purpose, against, bonus, p.mode === "normal" ? "" : p.mode].filter(Boolean).join(", ");
+}
+
+function RollCard({ prompt, onRoll }: { prompt: RollPrompt; onRoll: () => Promise<void> }) {
+  const [busy, setBusy] = useState(false);
+  return (
+    <div role="group" aria-label="Roll prompt" className="flex shrink-0 items-center justify-between gap-3 rounded-lg border border-primary bg-card p-3">
+      <span>{promptLine(prompt)}</span>
+      <Button autoFocus disabled={busy} onClick={() => { setBusy(true); void onRoll().finally(() => setBusy(false)); }}>
+        Roll
+      </Button>
     </div>
   );
 }

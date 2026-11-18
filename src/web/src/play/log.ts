@@ -9,11 +9,24 @@ export type Roll = {
   outcome: string | null;
 };
 
+/** A Roll prompt: the Turn waits for the player to click Roll. `n` numbers the prompts of one Turn. */
+export type RollPrompt = {
+  n: number;
+  purpose: string;
+  bonus: number;
+  target: number | null;
+  versus: string | null;
+  mode: "normal" | "advantage" | "disadvantage";
+};
+
 export type LogTurn = {
   seq: number;
   playerText: string;
   rolls: Roll[];
   narration: string;
+  prompt: RollPrompt | null;
+  /** Prompts closed so far; a prompt numbered below this is stale and ignored, whatever order it arrives in. */
+  answered: number;
   status: "running" | "committed" | "failed";
   error?: string;
 };
@@ -21,8 +34,11 @@ export type LogTurn = {
 export type PlayLog = { turns: LogTurn[] };
 
 export type LogAction =
-  | ({ type: "roll"; turn_seq: number } & Roll)
+  | ({ type: "roll"; turn_seq: number; answers_prompt?: number | null } & Roll)
+  | ({ type: "roll_prompt"; turn_seq: number } & RollPrompt)
+  | { type: "prompt_answered"; turn_seq: number; n: number }
   | { type: "narration_delta"; turn_seq: number; text: string }
+  | { type: "narration_discard"; turn_seq: number }
   | { type: "turn_done"; turn_seq: number }
   | { type: "error"; turn_seq: number; message: string }
   | { type: "submitted"; turn_seq: number; text: string }
@@ -33,7 +49,14 @@ export type ServerTurn = { seq: number; player_text: string; narration: string; 
 
 export const emptyLog: PlayLog = { turns: [] };
 
-const blank = (seq: number): LogTurn => ({ seq, playerText: "", rolls: [], narration: "", status: "running" });
+const blank = (seq: number): LogTurn => ({
+  seq, playerText: "", rolls: [], narration: "", prompt: null, answered: 0, status: "running",
+});
+
+/** Close prompt `n` and every earlier one. */
+const answer = (t: LogTurn, n: number): LogTurn => ({
+  ...t, answered: Math.max(t.answered, n + 1), prompt: t.prompt && t.prompt.n <= n ? null : t.prompt,
+});
 
 /** Apply `change` to the Turn with `seq`, adding a running Turn first if none has it yet. */
 function update(log: PlayLog, seq: number, change: (t: LogTurn) => LogTurn): PlayLog {
@@ -44,16 +67,27 @@ function update(log: PlayLog, seq: number, change: (t: LogTurn) => LogTurn): Pla
 export function foldLog(log: PlayLog, action: LogAction): PlayLog {
   switch (action.type) {
     case "roll": {
-      const { type: _, turn_seq, ...roll } = action;
-      return update(log, turn_seq, (t) => ({ ...t, rolls: [...t.rolls, roll] }));
+      const { type: _, turn_seq, answers_prompt, ...roll } = action;
+      return update(log, turn_seq, (t) => {
+        const next = { ...t, rolls: [...t.rolls, roll] };
+        return answers_prompt == null ? next : answer(next, answers_prompt);
+      });
     }
+    case "roll_prompt": {
+      const { type: _, turn_seq, ...prompt } = action;
+      return update(log, turn_seq, (t) => (prompt.n < t.answered ? t : { ...t, prompt }));
+    }
+    case "prompt_answered":
+      return update(log, action.turn_seq, (t) => answer(t, action.n));
     case "narration_delta":
       return update(log, action.turn_seq, (t) => ({ ...t, narration: t.narration + action.text }));
+    case "narration_discard":
+      return update(log, action.turn_seq, (t) => ({ ...t, narration: "" }));
     case "turn_done":
-      return update(log, action.turn_seq, (t) => ({ ...t, status: "committed" }));
+      return update(log, action.turn_seq, (t) => ({ ...t, prompt: null, status: "committed" }));
     case "error":
       return update(log, action.turn_seq, (t) => ({
-        ...t, rolls: [], narration: "", status: "failed", error: action.message,
+        ...t, rolls: [], narration: "", prompt: null, status: "failed", error: action.message,
       }));
     case "submitted": {
       // A new action clears earlier failed Turns, but not this one: its error can beat the POST response.
@@ -64,7 +98,8 @@ export function foldLog(log: PlayLog, action: LogAction): PlayLog {
       // GET /log holds committed Turns only; keep the running and failed Turns it cannot know about.
       const known = new Set(action.turns.map((t) => t.seq));
       const committed: LogTurn[] = action.turns.map((t) => ({
-        seq: t.seq, playerText: t.player_text, rolls: t.rolls, narration: t.narration, status: "committed",
+        seq: t.seq, playerText: t.player_text, rolls: t.rolls, narration: t.narration, prompt: null, answered: 0,
+        status: "committed",
       }));
       const pending = log.turns.filter((t) => t.status !== "committed" && !known.has(t.seq));
       return { turns: [...committed, ...pending].sort((a, b) => a.seq - b.seq) };

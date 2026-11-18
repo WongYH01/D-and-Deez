@@ -78,6 +78,10 @@ _Avoid_: Turn (reserved for the player's action)
 One dice result produced by the engine, with its purpose, expression, total, target and outcome.
 _Avoid_: Dice result
 
+**Roll prompt**:
+A pause in a Turn where the player clicks to make the Character's d20 Roll; monster Rolls never prompt. Auto-roll skips it.
+_Avoid_: Roll request, dice button
+
 **Ruleset**:
 The single SRD version a Campaign follows: SRD 5.1 or SRD 5.2.
 _Avoid_: Edition, rules version
@@ -111,6 +115,10 @@ _Avoid_: Area, room, scene
 **Quest**:
 A goal the Character is pursuing, shown to the player in the quest log; Claude may add one at any time. Unrelated to Beats.
 _Avoid_: Objective, task
+
+**Player notes**:
+A Campaign's one free-text page the player writes for themself; Claude never sees it. Unrelated to DM notes, which are Claude's own.
+_Avoid_: Journal, notepad, DM notes
 
 **Clue**:
 One piece of evidence, placed in a Location, that points to a Secret; every Secret has at least three.

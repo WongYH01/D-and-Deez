@@ -1,7 +1,8 @@
 """Turn orchestrator: runs one Turn from player action to committed Narration.
 
 It knows nothing about the terminal or HTTP; it reports through `emit(event, payload)` with the
-events roll, narration_delta, state_changed, turn_done, campaign_ended and error. The server passes its broadcaster.
+events roll_prompt, roll, narration_delta, narration_discard, state_changed, turn_done, campaign_ended and error.
+The server passes its broadcaster.
 """
 
 from __future__ import annotations
@@ -16,7 +17,7 @@ from sqlalchemy.orm import sessionmaker
 from pidm.claude import ClaudeClient, Reply, Usage
 from pidm.dice import Dice
 from pidm.engine import load_state
-from pidm.models import RollRecord, Session, Turn
+from pidm.models import Campaign, RollRecord, Session, Turn
 from pidm.prompts import OPENING, RESUME, system_prompt, user_message
 from pidm.recap import recap_block
 from pidm.rules import retrieve
@@ -75,15 +76,31 @@ def trim_history(history: list[dict], context: str, budget: int) -> list[dict]:
 
 class TurnOrchestrator:
     def __init__(self, factory: sessionmaker, client: ClaudeClient, *, round_cap: int = 4,
-                 history_turns: int = 8, context_budget: int = 8000, rng: Callable[[int], int] | None = None):
+                 history_turns: int = 8, context_budget: int = 8000, rng: Callable[[int], int] | None = None,
+                 prompt_timeout: float = 600):
         self.factory = factory
         self.client = client
         self.round_cap = round_cap
         self.history_turns = history_turns
         self.context_budget = context_budget
         self.rng = rng
+        self.prompt_timeout = prompt_timeout  # seconds an unanswered Roll prompt waits before it auto-rolls
         self._lock = threading.Lock()
+        self._answered = threading.Event()
         self.running = False
+        self.campaign_id: int | None = None  # the running Turn's Campaign
+        self.pending: dict | None = None  # the open Roll prompt of the running Turn, for the state view
+
+    def answer_roll(self, turn_seq: int | None = None, n: int | None = None, campaign_id: int | None = None) -> bool:
+        """The player clicked Roll: let the waiting Turn go on. False when no Roll prompt is open, or when the
+        open one is not the one named (a late click must not answer the next prompt)."""
+        p = self.pending
+        if p is None or (turn_seq, n) not in ((None, None), (p["turn_seq"], p["n"])):
+            return False
+        if campaign_id is not None and campaign_id != self.campaign_id:
+            return False
+        self._answered.set()
+        return True
 
     def run_opening(self, session_id: int, emit: Emit) -> Turn:
         """Turn 0: Claude narrates the bible's opening scene."""
@@ -105,6 +122,7 @@ class TurnOrchestrator:
             return self._run(session_id, player_text, emit)
         finally:
             self.running = False
+            self.pending = None
             self._lock.release()
 
     def _history(self, db, campaign_id: int) -> list[dict]:
@@ -120,8 +138,28 @@ class TurnOrchestrator:
     def _run(self, session_id: int, player_text: str, emit: Emit) -> Turn:
         db = self.factory()
         campaign_id = db.get(Session, session_id).campaign_id
+        self.campaign_id = campaign_id
         seq = next_seq(db, campaign_id)
-        dice = Dice(rng=self.rng, on_roll=lambda r: emit("roll", {"turn_seq": seq, **r.as_dict()}))
+        asked = {"count": 0, "answered": None}
+
+        def on_roll(r) -> None:
+            # The first Roll after an answered prompt names it, so the UI closes that prompt on any arrival order.
+            emit("roll", {"turn_seq": seq, **r.as_dict(), "answers_prompt": asked["answered"]})
+            asked["answered"] = None
+
+        def prompt(info: dict) -> None:
+            with self.factory() as short:
+                if short.get(Campaign, campaign_id).auto_roll:
+                    return
+            n, asked["count"] = asked["count"], asked["count"] + 1
+            self._answered.clear()
+            self.pending = {"turn_seq": seq, "n": n, **info}
+            emit("roll_prompt", self.pending)
+            self._answered.wait(self.prompt_timeout)  # a timeout auto-rolls
+            self.pending = None
+            asked["answered"] = n
+
+        dice = Dice(rng=self.rng, on_roll=on_roll, prompt=prompt)
         usage = Usage()
         try:
             state = load_state(db, session_id, dice)
@@ -137,14 +175,16 @@ class TurnOrchestrator:
                                                                 "cache_control": CACHE}]}]
             narration = None
             for _ in range(self.round_cap):
-                reply = self.client.send(system=system, messages=messages, tools=tools, tools_enabled=True, on_text=None)
+                streamed = []
+                reply = self.client.send(system=system, messages=messages, tools=tools, tools_enabled=True,
+                                         on_text=lambda t: (streamed.append(t), emit("narration_delta", {"turn_seq": seq, "text": t})))
                 usage.add(reply.usage)
                 calls = [b for b in reply.content if b["type"] == "tool_use"]
                 if not calls:
-                    # The final Tool round: only now is its text known to be Narration.
-                    narration = text_of(reply)
-                    emit("narration_delta", {"turn_seq": seq, "text": narration})
+                    narration = text_of(reply)  # the final Tool round: its streamed text is the Narration
                     break
+                if streamed:
+                    emit("narration_discard", {"turn_seq": seq})  # this round called tools, so its text is not Narration
                 messages.append({"role": "assistant", "content": strip_prose(reply.content)})
                 results = []
                 for call in calls:

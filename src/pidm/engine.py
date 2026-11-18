@@ -170,6 +170,28 @@ def save_bonus(ch: Character, ability: str) -> int:
     return b
 
 
+# Base walking speed in feet (§10 Races table).
+RACE_SPEED = {"human": 30, "lightfoot_halfling": 25, "half_orc": 30}
+
+
+def speed(ch: Character) -> int:
+    """Walking speed: the race's, plus Fast Movement (§9.1) without heavy armor.
+
+    shortcut: exhaustion and conditions that cut speed (§5) are not applied; this is the sheet's base figure.
+    """
+    base = RACE_SPEED.get(ch.race, 30)  # 30 ft is the common SRD speed
+    armor = equipped_armor(ch)
+    if ch.char_class == "barbarian" and ch.level >= 5 and not (armor and srd.ARMOR[armor]["category"] == "heavy"):
+        base += 10
+    return base
+
+
+def skill_list(ch: Character) -> list[dict]:
+    """All 18 skills for the sheet: bonus (expertise included) and whether the Character is proficient (§2.3)."""
+    return [{"skill": s, "ability": a, "bonus": check_bonus(ch, s)[0],
+             "proficient": bool((row := skill_row(ch, s)) and row.proficient)} for s, a in srd.SKILLS.items()]
+
+
 def lucky(ch: Character) -> bool:
     return ch.race == "lightfoot_halfling"  # Lucky (§10, R9: always reroll)
 
@@ -236,6 +258,17 @@ def d20_test(state: GameState, bonus: int, purpose: str, *, advantage=False, dis
     if record:
         state.dice.record(roll)
     return roll, nat
+
+
+def ask_roll(state: GameState, purpose: str, bonus: int, target: int | None, advantage: bool, disadvantage: bool,
+             versus: str | None = None) -> None:
+    """Roll prompt: before a d20 Roll for the Character, ask the player to make it (a hook set by the orchestrator).
+
+    Monster and NPC Rolls never call this, and neither does damage.
+    """
+    if state.dice.prompt:
+        state.dice.prompt({"purpose": purpose, "bonus": bonus, "target": target, "versus": versus,
+                           "mode": combine_modes(advantage, disadvantage)})
 
 
 def character_check_modes(ch: Character, ability: str, skill: str | None) -> tuple[bool, bool]:

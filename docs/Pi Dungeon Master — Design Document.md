@@ -61,8 +61,8 @@ A turn is one player action, resolved by code and narrated by Claude. Nothing is
 2. **Open the turn.** The orchestrator sets `running_turn_seq` in memory (the turn's number; it has no row id until it commits), and the engine loads the campaign's game state into a tree of in-memory Python objects for this turn.
 3. **Assemble context.** The context builder reads the state snapshot, the story director block, the session recap, rule sections matching keywords in the action, and (from v2) world facts and similar past scenes, then trims them to the token budget. No LLM call is needed.
 4. **Call Claude.** The orchestrator sends the request with streaming on.
-5. **Tool rounds.** When Claude requests tools, the engine validates each call against the in-memory state tree, computes the result, and changes only the tree. Each roll is held with the turn and sent at once as a `roll` event. The narration contract tells Claude to write no prose in a round that calls tools; any text it writes anyway is never shown and is stripped from the assistant message before the next round, so Claude never assumes the player has read it. In combat, Claude ends the player's action with resolve\_npc\_turns, which plays every monster turn in code, so a whole combat round fits in one tool call.
-6. **Final round.** Only the round that ends without tool calls streams to the browser as `narration_delta` events. If the round cap (default 4) is reached, the orchestrator makes one last call with tools disabled, so Claude narrates from the results it has instead of the turn being thrown away.
+5. **Tool rounds.** When Claude requests tools, the engine validates each call against the in-memory state tree, computes the result, and changes only the tree. Each roll is held with the turn and sent at once as a `roll` event. A d20 roll for the Character (skill check, saving throw, contest, attack) first pauses the turn with a `roll_prompt` event until the player clicks Roll (`POST /roll`), an Auto-roll setting skips the pause, and an unanswered prompt auto-rolls after 10 minutes; monster and NPC rolls and damage rolls never prompt. The pause blocks the turn thread, and the turn lock stays held. The narration contract tells Claude to write no prose in a round that calls tools; any text it writes anyway is never shown and is stripped from the assistant message before the next round, so Claude never assumes the player has read it. In combat, Claude ends the player's action with resolve\_npc\_turns, which plays every monster turn in code, so a whole combat round fits in one tool call.
+6. **Final round.** Every round streams its text as `narration_delta` events. When a round turns out to call tools, the server sends `narration_discard` and the browser drops that turn's streamed text, so only the round that ends without tool calls stays as the narration. If the round cap (default 4) is reached, the orchestrator makes one last call with tools disabled, so Claude narrates from the results it has instead of the turn being thrown away.
 7. **Commit.** In one short transaction the engine writes the changed parts of the state tree to the game tables, and the orchestrator saves the `turns` row (status `committed`, the narration and the token counts) with its rolls. The server then emits `state_changed` and `turn_done`, and the browser refreshes the sheet.
 8. **Fail safely.** If the API still fails after retries with backoff, the state tree and the turn's rolls are discarded, a `turns` row with status `failed` and its token counts is saved, and an `error` event is sent. The UI removes that turn's partial lines and offers Retry, which starts a new turn with fresh rolls.
 9. **Reconnect.** A browser that reconnects or reloads opens a new event stream and re-fetches `GET /log` and `GET /state`. Events are not replayed: while `running_turn_seq` is set the input stays locked, and the turn appears from `GET /log` once `turn_done` arrives.
@@ -318,9 +318,8 @@ Two screens: a setup wizard for new campaigns, and the play screen with the char
 | HP 18/24             |                                       |
 | XP 450/900           |  > I sneak behind the bar             |
 | Conditions: none     |  [Stealth] d20+5 = 17 vs DC 15: pass  |
-| Skills               |  You slip past unnoticed...           |
-| Inventory            |                                       |
-| Quests               |                                       |
+| Tabs: Status | Gear  |  You slip past unnoticed...           |
+| Skills | Quests | Notes|                                       |
 | Clocks (visible)     |                                       |
 | Encounter (if any)   |  [ What do you do?          ] [Send]  |
 +----------------------+---------------------------------------+
@@ -332,7 +331,9 @@ Two screens: a setup wizard for new campaigns, and the play screen with the char
 
 - Enter or Send submits the action and shows a thinking indicator until the first roll line or narration arrives. The input locks until `turn_done` or `error` arrives, and stays locked after a reload while `running_turn_seq` is set.
 - Each `roll` event renders as its own log line: the purpose, the expression, the total, the target and the outcome.
-- Narration appears word by word as `narration_delta` events arrive.
+- Narration appears word by word as `narration_delta` events arrive; `narration_discard` drops the text streamed so far for that turn.
+- The sheet has five tabs, the same in the phone drawer: Status (HP, XP, AC, speed, conditions), Gear (gold, then Equipped and Carried items), Skills (ability scores, saving throws, all 18 skills with proficiency marked, Features with uses left, proficiency bonus), Quests and Notes. Notes is the Player notes page: free text per campaign, autosaved, never sent to Claude.
+- A `roll_prompt` shows the check ("Perception check, DC 12, +3") with a Roll button and locks the action box until the Roll arrives. A reload restores the prompt from `GET /state`. An Auto-roll checkbox, off by default and saved on the server, skips the prompts.
 - On `state_changed`, the sidebar re-fetches `GET /state`; HP and XP bars animate to the new values.
 - On `error`, that turn's partial lines are removed and a Retry button appears.
 - Equip and unequip are direct actions that skip Claude. They are disabled while a turn is running or an encounter is active; anything else is typed as an action.
@@ -357,9 +358,12 @@ The browser sends commands over plain HTTP and receives everything a turn produc
 | `POST /campaigns/{id}/regenerate` | Replace a `ready` campaign's bible with a new one | 202; status returns to `generating` |
 | `POST /campaigns/{id}/retire` | The player ends the campaign: Retired, no Claude call | 200; 409 while a turn is running |
 | `GET /campaigns` | List campaigns and their status | JSON |
-| `GET /state` | Sheet, conditions, inventory, quests, encounter, visible clocks, `running_turn_seq` | JSON; 404 if no session is open. `encounter` is `null` outside a fight, else `{round, active, order: [{name, initiative, conditions, health}]}`: the Character and the Combatants in initiative order, `health` one of unhurt, wounded, bloodied, down. HP and AC are never sent |
+| `GET /state` | Sheet (with ability scores, saves, all skills, speed and Features), conditions, inventory, quests, encounter, visible clocks, `running_turn_seq`, `pending_prompt` (the open Roll prompt or `null`), `auto_roll` | JSON; 404 if no session is open. `encounter` is `null` outside a fight, else `{round, active, order: [{name, initiative, conditions, health}]}`: the Character and the Combatants in initiative order, `health` one of unhurt, wounded, bloodied, down. HP and AC are never sent |
 | `GET /log?session=<id>` | Committed turns and rolls for a session | JSON |
 | `POST /action` | Submit `{text}` for the open session | 202 with `turn_seq`; 409 if a turn is running or no session is open |
+| `POST /roll` | The player clicks Roll on the open Roll prompt | 200; 409 if no prompt is open |
+| `GET /campaigns/{id}/notes`, `PUT /campaigns/{id}/notes` | Read or replace the Player notes `{text}`; not game state, so no turn lock and no rollback | 200; 404 for an unknown campaign |
+| `PUT /campaigns/{id}/auto_roll` | Set Auto-roll `{on}`; turning it on answers an open prompt | 200; 404 for an unknown campaign |
 | `GET /events` | The SSE stream | Events below |
 | `POST /session/start` | Open a session of `{campaign_id}`; accepting a `ready` premise makes the campaign `active`. Any other open session is closed first, and any session missing its final recap gets one. The opening (turn 0) or a resume turn is then streamed | 202 with `session_id` |
 | `POST /session/end` | Close the open session; the worker writes the final recap, then a `VACUUM INTO` backup | 202; 409 while a turn is running |
@@ -367,8 +371,10 @@ The browser sends commands over plain HTTP and receives everything a turn produc
 
 | Event | Payload | When |
 | --- | --- | --- |
-| `narration_delta` | turn\_seq, text | While the final round streams |
-| `roll` | turn\_seq, purpose, expr, dice, total, target, outcome | After each engine roll |
+| `roll_prompt` | turn\_seq, n, purpose, bonus, target (DC or `null`), versus (opponent or `null`), mode | Before a d20 roll for the Character; the turn waits for `POST /roll` |
+| `narration_delta` | turn\_seq, text | While any round streams |
+| `narration_discard` | turn\_seq | When a streamed round turns out to call tools |
+| `roll` | turn\_seq, purpose, expr, dice, total, target, outcome, answers\_prompt (`n` of the prompt it answers, else `null`) | After each engine roll |
 | `state_changed` | turn\_seq (empty for direct actions) | After a turn commits or a direct action |
 | `turn_done` | turn\_seq | After the commit |
 | `error` | turn\_seq, message, retryable | When a turn fails |

@@ -7,6 +7,7 @@ import random as _random
 from pathlib import Path
 
 import pytest
+from sqlalchemy import ColumnDefault, select
 
 from pidm.campaign import Setup, start_campaign
 from pidm.claude import Reply, Usage
@@ -166,3 +167,19 @@ def make_game(factory):
     yield make
     for g in games:
         g.db.close()
+
+
+@pytest.fixture(autouse=True)
+def auto_roll_by_default(monkeypatch):
+    """Tests that don't exercise Roll prompts would wait for a click: new Campaigns start with Auto-roll on.
+
+    A test of a Roll prompt turns it off with `set_auto_roll(factory, False)`.
+    """
+    monkeypatch.setattr(Campaign.__table__.c.auto_roll, "default", ColumnDefault(True))
+
+
+def set_auto_roll(factory, on: bool) -> None:
+    with factory() as db:
+        for camp in db.scalars(select(Campaign)):
+            camp.auto_roll = on
+        db.commit()

@@ -44,6 +44,9 @@ class Campaign(Base):
     current_location: Mapped[str] = mapped_column(String(60), default="")  # a bible Location slug
     last_progress_turn: Mapped[int] = mapped_column(Integer, default=0)  # Turn seq of the last Beat or Clue
     ending: Mapped[str | None] = mapped_column(String(20), nullable=True)  # victory, defeat, fallen_hero, retired
+    # Player notes: the player's own page, never sent to Claude and outside every Turn's transaction.
+    player_notes: Mapped[str] = mapped_column(Text, default="")
+    auto_roll: Mapped[bool] = mapped_column(Boolean, default=False)  # skip Roll prompts
 
     character: Mapped["Character"] = relationship(back_populates="campaign", uselist=False, cascade="all, delete-orphan")
     quests: Mapped[list["Quest"]] = relationship(back_populates="campaign", cascade="all, delete-orphan", order_by="Quest.id")

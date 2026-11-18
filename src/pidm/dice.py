@@ -68,6 +68,7 @@ class Dice:
 
     rng: Callable[[int], int] | None = None
     on_roll: Callable[[Roll], None] | None = None
+    prompt: Callable[[dict], None] | None = None  # asks the player to make the Character's d20 Roll; may block
     rolls: list[Roll] = field(default_factory=list)
 
     def __post_init__(self) -> None:
