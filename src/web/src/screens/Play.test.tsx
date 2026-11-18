@@ -396,3 +396,15 @@ test("the sheet shows spell slots used and max for a caster only", async () => {
   await screen.findByText("AC");
   expect(screen.queryByRole("list", { name: "Spell slots" })).toBeNull();
 });
+
+test("a reloaded log renders Narration as markdown and the player's action as plain text", async () => {
+  fakeEvents();
+  fakeServer({ "GET /state": () => state([]), "GET /log?session=1": () => [
+    { seq: 1, player_text: "I **shout**", narration: "The **king** nods.\n\n- sword\n- shield", rolls: [] },
+  ] });
+  const { container } = render(<Play />);
+  await screen.findByText("king");
+  expect(container.querySelector("strong")?.textContent).toBe("king");
+  expect(within(screen.getByText("king").parentElement!.parentElement!).getAllByRole("listitem")).toHaveLength(2);
+  expect(screen.getByText("> I **shout**")).toBeTruthy();
+});

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerTrigger } from "@/components/ui/drawer";
+import { Narration } from "@/play/Narration";
 import { type LogTurn, type Roll, type RollPrompt, emptyLog, foldLog, isLocked } from "@/play/log";
 import { type Character, type Item, type Quest, Sheet } from "@/screens/Sheet";
 
@@ -287,7 +288,7 @@ function StoryLog({ turns, thinking, ending, locked, onRetry }: {
           {t.rolls.map((r, i) => (
             <p key={i} className="font-sans text-sm text-muted-foreground">{rollLine(r)}</p>
           ))}
-          {t.narration && <p className="whitespace-pre-wrap">{t.narration}</p>}
+          {t.narration && <Narration text={t.narration} />}
           {t.status === "failed" && (
             <div className="flex items-center gap-2 font-sans text-sm text-destructive">
               <span>{t.error}</span>
