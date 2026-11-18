@@ -120,6 +120,22 @@ _Avoid_: Objective, task
 A Campaign's one free-text page the player writes for themself; Claude never sees it. Unrelated to DM notes, which are Claude's own.
 _Avoid_: Journal, notepad, DM notes
 
+**Entity**:
+A named NPC, place, faction or item the story remembers, seeded from the Campaign bible and extended by whatever Claude invents in play. A place Entity is not necessarily a Location.
+_Avoid_: Object, thing, node
+
+**Fact**:
+One relation between two Entities that holds over a span of Turns, such as "the informant is dead".
+_Avoid_: Memory, event, triple
+
+**Scene**:
+A stretch of play ended by a change of place, the end of an Encounter, a long rest, or 15 Turns; each finished Scene gets one summary used for recall.
+_Avoid_: Location, chapter
+
+**DM notes**:
+Claude's own campaign notes: running jokes, planned callbacks, player preferences. Unrelated to Player notes.
+_Avoid_: Player notes, journal
+
 **Clue**:
 One piece of evidence, placed in a Location, that points to a Secret; every Secret has at least three.
 _Avoid_: Hint, lead

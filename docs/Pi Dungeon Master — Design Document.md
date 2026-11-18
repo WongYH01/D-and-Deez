@@ -14,7 +14,7 @@ Pi Dungeon Master is a single-player, text-based D&D 5e game served as a web app
 - No rule drift on mechanics: dice, damage, conditions, XP and inventory are computed by code, never by the model.
 - A real story arc: every campaign has a setting, an opening hook, a plot that can't dead-end, and defined endings.
 - Continuity: v1 carries the story across sessions through recaps and the campaign plan; v2 adds long-term recall of individual NPCs, places and events.
-- One container image that runs on a PC (amd64) and a Raspberry Pi 5 (arm64), with no local model inference.
+- One container image that runs on a PC (amd64) and a Raspberry Pi 5 (arm64), with no local LLM inference. From v2 one small local embedding model is allowed for scene recall (ADR 0005).
 
 **Non-goals for v1**
 
@@ -235,6 +235,8 @@ Every turn the dynamic context carries a director block of about 150 to 300 toke
 
 Deferred to v2. In v1 the bible stays fixed for the whole campaign: three clues per secret and stall detection keep the plot moving when the player goes off-script, and a one-shot never needs a replan. From v2, at session end the background worker compares the bible with what actually happened and revises future beats, clues and clocks; for example, if the player killed the informant, his clues move elsewhere.
 
+The replan runs once per session end, as an ordinary background job after the Final recap. It changes only unplayed content: it never touches revealed Clues, completed Beats or the Endings' conditions. Each replan is saved as a new bible version, so a bad one can be rolled back. The player sees only a neutral "the story adapted" line in the Campaigns view; the full diff is logged server-side and is for the player to read after the Campaign ends.
+
 ### 6. Ending
 
 `end_campaign` is accepted only when one of these holds:
@@ -253,6 +255,8 @@ For the other endings Claude's final narration is the epilogue (a narrow victory
 ## Adventure import (v2)
 
 Deferred to v2 (M6); v1 campaigns are always generated. From v2, a campaign can start from a human-written adventure instead of a generated one. The importer converts the adventure into the same campaign bible and keeps the author's original text, so Claude narrates the writer's scenes and improvises only in the gaps. The project is for personal use, so any adventure the player owns or has downloaded can be imported; imported files are never redistributed.
+
+**M6d decisions.** Import is a separate "Import adventure" path on the Setup screen: the player uploads a PDF or text file, text is extracted locally (a PDF with no text layer is rejected with a clear error), Claude converts the text to a bible, and the player reviews a spoiler-free premise plus warnings before accepting; cancelling deletes the source. The usual setup choices (Template, Ruleset, Lines and veils) still apply. Retrieval gives Claude only the `source_chunks` for the Character's current Location, never the whole text, and never shows them in the UI. The first release ships import, schema validation and per-location retrieval only; solo scaling (sidekick, bonus levels, save rerolls) is a later design once a real adventure has been imported, and the review warns that party-of-four adventures are harder for one Character.
 
 **Pipeline**
 
@@ -463,7 +467,7 @@ Each milestone ends in something testable, the container comes first so every la
 4. **M3: Story director.** Setup inputs as terminal flags, bible generation with schema and code validation, a hand-written one-shot bible fixture, story tables, the story tools (`move_to`, `advance_beat`, `tick_clock`, `reveal_clue`, `end_campaign`), director block, stall detection and endings. *Exit: a one-shot plays from its opening hook to a valid ending in the terminal, and a scripted idle run triggers a clue within 8 turns.*
 5. **M4: Server and streaming.** FastAPI endpoints (including regenerate, retire, equip and unequip), the SSE stream wired to the M1 turn orchestrator on a turn thread, a job thread for bible generation and recaps, campaign-wide turn numbering, campaign-scoped encounters, both cache breakpoints, the token budget, background recaps, resume turns, session start and end with `VACUUM INTO` backups. *Exit: a turn submitted with curl streams rolls and narration; a forced API failure leaves game state unchanged and saves a failed turn row; turn 2 reports cached tokens; a session started without the previous final recap writes it first; campaign creation returns at once and the campaign shows as ready when its bible is saved. Cached tokens and curl streaming are checked by hand against the real API; the rest, including `cache_control` placement, is covered by tests with the fake Claude client. Databases from before M4 are not migrated.*
 6. **M5: Web UI (v1 release).** The React single-page app in `src/web` and its Node build stage, served by FastAPI at `/`: setup wizard with premise accept or regenerate, Campaigns list, play screen with a sheet showing conditions, visible clocks and the encounter panel, log with roll lines, direct equip actions, reload recovery, campaign ending, a phone layout and the About page. Server work: the encounter in `GET /state` and a `visible` flag on bible clocks. *Exit: the success criteria in the Overview are met on the Pi. Vitest covers the event reducer; the screens are checked by hand in a browser.*
-7. **M6: v2.** World graph, scenes and scene recall, DM notes (which also hold rulings), spellcasting with spell slots, a full character builder with carrying a character into a new campaign, adventure import with solo scaling, between-session replanning, and optional non-fantasy reskins. *Exit: an NPC introduced in session 1 is recalled correctly in session 3 without replaying old turns, a spellcaster completes a fight, and an imported one-page dungeon plays to an ending using its original room text.*
+7. **M6: v2**, shipped as four sub-milestones, each playable and merged on its own: **M6a Memory** (entities and facts seeded from the bible's NPCs and Locations, scenes with background summaries, scene recall with a local embedding model, DM notes capped at about 500 tokens, which also hold rulings), **M6b Spellcasting** (caster Templates for level 1 Wizard and Cleric, cantrips, level 1 and 2 slots recovered by `rest`, `cast_spell` computing attacks, DCs, damage and healing, and returning SRD text for effects the engine does not model; no concentration, ritual casting or levelling), **M6c Replanning**, **M6d Adventure import** (no solo scaling). The character builder, carry-over and non-fantasy reskins are not in M6. *Exit: an NPC introduced in session 1 is recalled correctly in session 3 without replaying old turns, a spellcaster completes a fight, and an imported one-page dungeon plays to an ending using its original room text.*
 8. **M7: Voice (v3).** Push-to-talk speech-to-text feeding `POST /action`, and Piper text-to-speech reading narration aloud. *Exit: a full scene played by voice alone.*
 
 ## Open questions
@@ -475,9 +479,9 @@ Each milestone ends in something testable, the container comes first so every la
 - [x] Clocks: should the player see the antagonist's main clock, or only feel it through the story? Decided: the main clock stays hidden; the bible marks other clocks visible.
 - [ ] Non-fantasy settings in v2: reskin SRD mechanics, or add a separate open ruleset?
 - [ ] Character carry-over: keep level and gear in a new campaign, or reset to level 1? Deferred to the v2 character builder; v1 offers only New campaign after an ending.
-- [ ] Embeddings in v2: Voyage AI (an extra API and key) or a small local model in the container?
+- [x] Embeddings in v2: Voyage AI (an extra API and key) or a small local model in the container? Decided: a small quantised ONNX model that runs on a Pi 5 (ADR 0005); `scene_vec` stores the model id and a startup check re-embeds scenes whose id differs from the configured one. Embedding failure skips scene recall, never fails a Turn.
 - [x] Remote play: is Tailscale needed for v1, or is home Wi-Fi enough? Decided: home Wi-Fi is enough for v1.
-- [ ] Import (v2): send PDFs to Claude as whole documents, or extract text locally first to save tokens?
+- [x] Import (v2): send PDFs to Claude as whole documents, or extract text locally first to save tokens? Decided: extract locally; Claude sees only text.
 
 ## Design review
 
