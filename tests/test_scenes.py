@@ -8,7 +8,7 @@ from pidm.claude import ClaudeError
 from pidm.models import Scene
 
 from conftest import text, tool
-from test_server import act, create, make_server, server, start  # noqa: F401 (fixtures)
+from conftest import act, create, start
 
 
 def scenes(factory) -> list[Scene]:

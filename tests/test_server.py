@@ -22,54 +22,7 @@ from pidm.claude import ClaudeError, Usage
 from pidm.devclaude import DevClaude
 from pidm.models import Campaign, Character, Combatant, Session, Turn
 
-from conftest import Events, FakeClaude, fixture_bible, text, tool
-
-SETUP = {"setting": "dark fantasy", "tone": "grim", "length": "one-shot", "template": "rogue",
-         "character_name": "Wren", "hook": "Raised by the ferryman Osric.", "lines": "", "veils": ""}
-
-
-def bible_call(bible=None):
-    return tool(PLAN_TOOL, **(bible or fixture_bible()))
-
-
-@pytest.fixture
-def make_server(factory, tmp_path):
-    def make(turn=(), plan=(), recap=(), web_dir=None):
-        clients = SimpleNamespace(turn=FakeClaude(*turn), plan=FakeClaude(*plan), recap=FakeClaude(*recap))
-        app = create_app(factory, turn_client=clients.turn, plan_client=clients.plan, recap_client=clients.recap,
-                         backup_dir=tmp_path / "backups", inline=True, web_dir=web_dir)
-        events = Events()
-        app.state.broadcaster.subscribe(events)
-        return SimpleNamespace(http=TestClient(app), events=events, backups=tmp_path / "backups", **vars(clients))
-    return make
-
-
-@pytest.fixture
-def server(make_server):
-    return make_server()
-
-
-def create(s, **overrides) -> int:
-    s.plan.script.append(bible_call())
-    r = s.http.post("/campaigns", json={**SETUP, **overrides})
-    assert r.status_code == 202
-    return r.json()["campaign_id"]
-
-
-def campaigns(s) -> dict[int, dict]:
-    return {c["id"]: c for c in s.http.get("/campaigns").json()}
-
-
-def start(s, campaign_id, narration="Fog on the Reed Shore. What do you do?") -> int:
-    s.turn.script.append(text(narration))
-    r = s.http.post("/session/start", json={"campaign_id": campaign_id})
-    assert r.status_code == 202, r.text
-    return r.json()["session_id"]
-
-
-def act(s, action, *replies):
-    s.turn.script.extend(replies or [text("Nothing stirs.")])
-    return s.http.post("/action", json={"text": action})
+from conftest import SETUP, Events, FakeClaude, act, bible_call, campaigns, create, fixture_bible, start, text, tool  # noqa: F401 (make_server, server fixtures come from conftest)
 
 
 def session_row(factory, session_id) -> Session:
