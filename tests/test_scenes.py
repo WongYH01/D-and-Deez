@@ -60,3 +60,12 @@ def test_a_failed_summary_leaves_play_unaffected(factory, server):
     assert r.status_code == 202 and server.events[-1][0] == "turn_done"
     assert [s.summary for s in scenes(factory)] == [""]
     assert act(server, "I wait").status_code == 202
+
+
+def test_a_scene_is_not_auto_ended_during_an_encounter(make_game):
+    from pidm.scenes import end_overlong_scene
+    g = make_game("fighter")
+    g.script(10, 10, 10).ok("start_encounter", monsters=[{"monster": "goblin", "count": 1}])
+    g.state.turn = 20
+    end_overlong_scene(g.state)
+    assert g.db.scalars(select(Scene)).all() == []

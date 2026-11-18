@@ -52,7 +52,8 @@ def t_end_scene(state: GameState, reason: str) -> dict:
 def end_overlong_scene(state: GameState) -> None:
     """Called at commit. shortcut: counts seq numbers, so a failed Turn counts toward the 15; fine for one player."""
     start = open_scene_start(state)
-    if start <= state.turn and state.turn - start + 1 >= MAX_SCENE_TURNS:
+    # An Encounter is never split: the Scene runs on until it ends, as end_scene refuses to cut it too.
+    if start <= state.turn and state.turn - start + 1 >= MAX_SCENE_TURNS and state.encounter is None:
         end_scene(state)
 
 
