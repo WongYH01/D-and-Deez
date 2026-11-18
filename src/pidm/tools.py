@@ -782,8 +782,6 @@ def t_cast_spell(state: GameState, spell: str, targets: list | None = None, slot
             raise ToolError("A spell attack targets a Combatant.")
     out: dict = {"spell": data["name"], "slot_level": sl if lvl else None, "spell_save_dc": dc, "spell_attack_bonus": atk}
 
-    if slot:
-        slot.used += 1
     if heal:
         out["healing"] = t_heal(state, names[0], _scaled(heal, sl).replace("+MOD", f"{mod(ch, ab):+d}"))
     elif expr:
@@ -835,6 +833,8 @@ def t_cast_spell(state: GameState, spell: str, targets: list | None = None, slot
         out["description"] = " ".join(data["desc"])
         if sl > lvl and data.get("higher_level"):
             out["higher_level"] = " ".join(data["higher_level"])
+    if slot:
+        slot.used += 1  # spent last, so an error mid-cast leaves the slot alone
     if enc is not None:
         _set_state(enc, economy=econ)
     out["slots_left"] = {s.level: s.max - s.used for s in ch.spell_slots}
