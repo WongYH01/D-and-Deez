@@ -56,10 +56,11 @@ function Choice({ id, label, items, value, onChange }: {
   );
 }
 
-function Field({ id, label, children }: { id: string; label: string; children: ReactNode }) {
+function Field({ id, label, hint, children }: { id: string; label: string; hint?: string; children: ReactNode }) {
   return (
     <div className="space-y-2">
       <Label htmlFor={id}>{label}</Label>
+      {hint && <p id={`${id}-hint`} className="text-sm text-muted-foreground">{hint}</p>}
       {children}
     </div>
   );
@@ -269,12 +270,12 @@ export function Setup() {
       {name === "Length" && <Choice id="length" label="Length" items={LENGTHS} value={length} onChange={setLength} />}
       {name === "Lines and veils" && (
         <>
-          <Field id="lines" label="Lines">
-            <Textarea id="lines" autoFocus placeholder="Topics never shown" value={lines}
-              onChange={(e) => setLines(e.target.value)} />
+          <Field id="lines" label="Lines" hint="Topics that never appear in the story.">
+            <Textarea id="lines" autoFocus aria-describedby="lines-hint" placeholder="e.g. graphic harm to children"
+              value={lines} onChange={(e) => setLines(e.target.value)} />
           </Field>
-          <Field id="veils" label="Veils">
-            <Textarea id="veils" placeholder="Topics kept off-screen" value={veils}
+          <Field id="veils" label="Veils" hint="Topics that may happen, but only off-screen.">
+            <Textarea id="veils" aria-describedby="veils-hint" placeholder="e.g. torture" value={veils}
               onChange={(e) => setVeils(e.target.value)} />
           </Field>
         </>
