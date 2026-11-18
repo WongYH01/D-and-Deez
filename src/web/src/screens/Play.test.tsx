@@ -408,3 +408,21 @@ test("a reloaded log renders Narration as markdown and the player's action as pl
   expect(within(screen.getByText("king").parentElement!.parentElement!).getAllByRole("listitem")).toHaveLength(2);
   expect(screen.getByText("> I **shout**")).toBeTruthy();
 });
+
+test("a stream error shows a banner; a reconnect clears it and reloads a Turn finished meanwhile", async () => {
+  const emit = fakeEvents();
+  let log: object[] = [];
+  fakeServer({ "GET /state": () => state([]), "GET /log?session=1": () => log });
+  render(<Play />);
+  const input = (await screen.findByLabelText("Your action")) as HTMLInputElement;
+  expect(screen.queryByRole("alert")).toBeNull();
+
+  emit.drop();
+  expect((await screen.findByRole("alert")).textContent).toContain("Connection to the server lost");
+  expect(input.disabled).toBe(false); // the Action box stays usable
+
+  log = [{ seq: 2, player_text: "I wait", narration: "Time passes.", rolls: [] }];
+  emit.reconnect();
+  await screen.findByText("Time passes.");
+  expect(screen.queryByRole("alert")).toBeNull();
+});
